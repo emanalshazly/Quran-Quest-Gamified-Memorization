@@ -11,6 +11,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useApp } from '../../contexts/AppContext';
 import { surahsAPI } from '../../services/api';
 import { pendingVerseIds } from '../../services/offline';
+import AudioDownloadCard from '../../components/AudioDownloadCard';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS, SHADOWS } from '../../constants/theme';
 
 const SurahDetailScreen = ({ route, navigation }) => {
@@ -155,6 +156,8 @@ const SurahDetailScreen = ({ route, navigation }) => {
           <Text style={styles.modeSubtitle}>سجّل واحصل على تقييم</Text>
         </TouchableOpacity>
       </View>
+
+      {verses.length > 0 && <AudioDownloadCard surah={surah} />}
 
       {verses.length === 0 && (
         <View style={styles.noVersesBox}>

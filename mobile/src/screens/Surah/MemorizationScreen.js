@@ -12,6 +12,7 @@ import { useApp } from '../../contexts/AppContext';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS, SHADOWS } from '../../constants/theme';
 import { RECITERS } from '../../constants';
 import { getVerseAudioUrl } from '../../utils/audio';
+import { getLocalVersePath } from '../../services/audioDownloads';
 
 /**
  * Memorization Mode: one verse at a time, large Uthmani-style text,
@@ -19,10 +20,11 @@ import { getVerseAudioUrl } from '../../utils/audio';
  */
 const MemorizationScreen = ({ route, navigation }) => {
   const { surah, verses, startIndex = 0 } = route.params;
-  const { selectedKid } = useApp();
+  const { selectedKid, isOnline } = useApp();
   const [index, setIndex] = useState(Math.min(startIndex, verses.length - 1));
   const [repeatCount, setRepeatCount] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [localPath, setLocalPath] = useState(null);
   const soundRef = useRef(null);
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
@@ -34,6 +36,20 @@ const MemorizationScreen = ({ route, navigation }) => {
         ? getVerseAudioUrl(reciterId, surah.surah_number, verse.verse_number)
         : verse.audio_url)
     : null;
+
+  // Prefer a downloaded copy of this verse when there is one
+  useEffect(() => {
+    let cancelled = false;
+    setLocalPath(null);
+    if (verse && surah.surah_number) {
+      getLocalVersePath(reciterId, surah.surah_number, verse.verse_number).then((path) => {
+        if (!cancelled) setLocalPath(path);
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [reciterId, surah.surah_number, verse?.verse_number]);
 
   useEffect(() => {
     return () => {
@@ -53,8 +69,15 @@ const MemorizationScreen = ({ route, navigation }) => {
   };
 
   const playAudio = () => {
-    if (!audioUrl) {
+    if (!localPath && !audioUrl) {
       Alert.alert('لا يوجد تسجيل', 'تلاوة هذه الآية غير متوفرة');
+      return;
+    }
+    if (!localPath && !isOnline) {
+      Alert.alert(
+        'لا يوجد اتصال',
+        'هذه التلاوة غير منزّلة على الجهاز. نزّلها من صفحة السورة لتستمع إليها دون اتصال.'
+      );
       return;
     }
 
@@ -64,7 +87,11 @@ const MemorizationScreen = ({ route, navigation }) => {
     }
 
     setPlaying(true);
-    const sound = new Sound(audioUrl, null, (error) => {
+    // react-native-sound: basePath '' for an absolute file path, null for a URL
+    const sound = localPath
+      ? new Sound(localPath, '', onLoaded)
+      : new Sound(audioUrl, null, onLoaded);
+    function onLoaded(error) {
       if (error) {
         setPlaying(false);
         Alert.alert('خطأ', 'تعذر تشغيل التلاوة');
@@ -75,7 +102,7 @@ const MemorizationScreen = ({ route, navigation }) => {
         sound.release();
         soundRef.current = null;
       });
-    });
+    }
     soundRef.current = sound;
   };
 

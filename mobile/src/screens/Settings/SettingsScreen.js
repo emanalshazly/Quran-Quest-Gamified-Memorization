@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -12,6 +13,12 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useApp } from '../../contexts/AppContext';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS, SHADOWS } from '../../constants/theme';
 import { RECITERS } from '../../constants';
+import {
+  listDownloaded,
+  totalBytes,
+  deleteAllAudio,
+  formatBytes,
+} from '../../services/audioDownloads';
 
 const REMINDER_HOURS = [
   { hour: 7, label: '7 ص' },
@@ -25,6 +32,41 @@ const SettingsScreen = ({ navigation }) => {
   const { language, changeLanguage, isDarkMode, toggleDarkMode, selectedKid, updateKid,
     remindersEnabled, reminderHour, setRemindersEnabled, setReminderHour,
     isOnline, pendingSyncCount, syncNow } = useApp();
+
+  const [audioStats, setAudioStats] = useState({ surahs: 0, bytes: 0 });
+
+  const loadAudioStats = useCallback(async () => {
+    try {
+      const [entries, bytes] = await Promise.all([listDownloaded(), totalBytes()]);
+      setAudioStats({ surahs: entries.length, bytes });
+    } catch (error) {
+      setAudioStats({ surahs: 0, bytes: 0 });
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadAudioStats();
+    }, [loadAudioStats])
+  );
+
+  const confirmDeleteAllAudio = () => {
+    Alert.alert(
+      'حذف كل التلاوات المنزّلة',
+      `سيُحذف ${formatBytes(audioStats.bytes)} من الجهاز. يمكنك تنزيلها مرة أخرى في أي وقت.`,
+      [
+        { text: 'إلغاء', style: 'cancel' },
+        {
+          text: 'حذف الكل',
+          style: 'destructive',
+          onPress: async () => {
+            await deleteAllAudio();
+            loadAudioStats();
+          },
+        },
+      ]
+    );
+  };
 
   const toggleReminders = async (enabled) => {
     const ok = await setRemindersEnabled(enabled);
@@ -93,6 +135,21 @@ const SettingsScreen = ({ navigation }) => {
             />
           }
         />
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>التلاوات المنزّلة</Text>
+        <Row
+          icon="🎧"
+          label="للاستماع دون اتصال"
+          value={audioStats.surahs > 0 ? `${audioStats.surahs} سورة • ${formatBytes(audioStats.bytes)}` : 'لا شيء'}
+        />
+        {audioStats.surahs > 0 && (
+          <Row icon="🗑️" label="حذف كل التلاوات المنزّلة" value="" onPress={confirmDeleteAllAudio} />
+        )}
+        <Text style={styles.subscriptionNote}>
+          نزّل تلاوة أي سورة من صفحتها. التلاوات المنزّلة تبقى عند تسجيل الخروج.
+        </Text>
       </View>
 
       <View style={styles.section}>
