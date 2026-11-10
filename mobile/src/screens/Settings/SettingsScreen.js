@@ -13,9 +13,27 @@ import { useApp } from '../../contexts/AppContext';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS, SHADOWS } from '../../constants/theme';
 import { RECITERS } from '../../constants';
 
+const REMINDER_HOURS = [
+  { hour: 7, label: '7 ص' },
+  { hour: 13, label: '1 م' },
+  { hour: 17, label: '5 م' },
+  { hour: 20, label: '8 م' },
+];
+
 const SettingsScreen = ({ navigation }) => {
   const { logout, user } = useAuth();
-  const { language, changeLanguage, isDarkMode, toggleDarkMode, selectedKid, updateKid } = useApp();
+  const { language, changeLanguage, isDarkMode, toggleDarkMode, selectedKid, updateKid,
+    remindersEnabled, reminderHour, setRemindersEnabled, setReminderHour } = useApp();
+
+  const toggleReminders = async (enabled) => {
+    const ok = await setRemindersEnabled(enabled);
+    if (!ok) {
+      Alert.alert(
+        'الإشعارات غير مفعّلة',
+        'لم يُسمح للتطبيق بإرسال الإشعارات. يمكنك السماح بها من إعدادات الجهاز ثم المحاولة مجدداً.'
+      );
+    }
+  };
   const currentReciter = selectedKid?.preferred_reciter || 'minshawi';
 
   const confirmLogout = () => {
@@ -71,6 +89,39 @@ const SettingsScreen = ({ navigation }) => {
             />
           }
         />
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>تذكيرات المراجعة</Text>
+        <Row
+          icon="🔔"
+          label="تذكير يومي بالآيات المستحقة"
+          rightElement={
+            <Switch
+              value={remindersEnabled}
+              onValueChange={toggleReminders}
+              trackColor={{ true: COLORS.primary }}
+            />
+          }
+        />
+        {remindersEnabled && (
+          <View style={styles.hoursRow}>
+            {REMINDER_HOURS.map(({ hour, label }) => (
+              <TouchableOpacity
+                key={hour}
+                style={[styles.hourChip, reminderHour === hour && styles.hourChipActive]}
+                onPress={() => setReminderHour(hour)}
+              >
+                <Text style={[styles.hourChipText, reminderHour === hour && styles.hourChipTextActive]}>
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+        <Text style={styles.subscriptionNote}>
+          يصلك التذكير فقط في الأيام التي فيها آيات تحتاج مراجعة.
+        </Text>
       </View>
 
       {selectedKid && (
@@ -165,6 +216,31 @@ const styles = StyleSheet.create({
   logoutText: {
     color: COLORS.card,
     fontSize: FONT_SIZES.lg,
+    fontWeight: 'bold',
+  },
+  hoursRow: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    paddingVertical: SPACING.md,
+  },
+  hourChip: {
+    flex: 1,
+    paddingVertical: SPACING.sm,
+    borderRadius: BORDER_RADIUS.round,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+  },
+  hourChipActive: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  hourChipText: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.text,
+  },
+  hourChipTextActive: {
+    color: COLORS.card,
     fontWeight: 'bold',
   },
   attribution: {

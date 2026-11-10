@@ -405,6 +405,46 @@ router.get('/stats/:kidId', authenticateUser, verifyKidOwnership, async (req, re
 });
 
 /**
+ * @route   GET /api/memorization/upcoming/:kidId
+ * @desc    Review due-times for the next few days, used by the app to
+ *          schedule local reminder notifications in the device's timezone
+ * @access  Private
+ */
+router.get('/upcoming/:kidId', authenticateUser, verifyKidOwnership, async (req, res) => {
+    try {
+        const days = Math.min(30, Math.max(1, parseInt(req.query.days, 10) || 7));
+        const now = new Date();
+        const horizon = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+
+        const { data: rows, error } = await supabase
+            .from('memorized_verses')
+            .select('next_review_date')
+            .eq('kid_id', req.params.kidId)
+            .lte('next_review_date', horizon.toISOString())
+            .order('next_review_date', { ascending: true });
+
+        if (error) throw error;
+
+        // next_review_date is a timestamp without time zone holding UTC
+        const toUtcIso = (value) => new Date(/Z|[+-]\d\d:?\d\d$/.test(value) ? value : `${value}Z`).toISOString();
+        const dueTimes = (rows || []).map(row => toUtcIso(row.next_review_date));
+
+        res.json({
+            success: true,
+            serverTime: now.toISOString(),
+            overdueCount: dueTimes.filter(t => new Date(t) <= now).length,
+            upcoming: dueTimes.filter(t => new Date(t) > now)
+        });
+    } catch (error) {
+        console.error('Get upcoming reviews error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch upcoming reviews'
+        });
+    }
+});
+
+/**
  * @route   GET /api/memorization/progress-map/:kidId
  * @desc    Memorized-verse counts per surah, for the Quest Map (one call)
  * @access  Private

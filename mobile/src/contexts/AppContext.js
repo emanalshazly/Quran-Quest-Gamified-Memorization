@@ -1,17 +1,26 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { kidsAPI } from '../services/api';
 import { useAuth } from './AuthContext';
+import {
+  syncReviewReminders,
+  cancelReviewReminders,
+  requestNotificationPermission,
+} from '../services/notifications';
+import { DEFAULT_REMINDER_HOUR } from '../utils/reminderSchedule';
 
 const AppContext = createContext({});
 
 export const AppProvider = ({ children }) => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, loading: authLoading } = useAuth();
   const [selectedKid, setSelectedKid] = useState(null);
   const [kids, setKids] = useState([]);
   const [language, setLanguage] = useState('ar');
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [kidsLoaded, setKidsLoaded] = useState(false);
+  const [remindersEnabled, setRemindersEnabledState] = useState(false);
+  const [reminderHour, setReminderHourState] = useState(DEFAULT_REMINDER_HOUR);
 
   useEffect(() => {
     loadAppSettings();
@@ -27,18 +36,42 @@ export const AppProvider = ({ children }) => {
     } else {
       setKids([]);
       setSelectedKid(null);
+      setKidsLoaded(false);
     }
   }, [isAuthenticated]);
 
+  const syncReminders = useCallback(
+    () => syncReviewReminders({ kids, enabled: remindersEnabled, reminderHour }),
+    [kids, remindersEnabled, reminderHour]
+  );
+
+  // Keep the scheduled review reminders in step with the kid list and the
+  // reminder settings. Nothing is touched until the saved state has loaded,
+  // so reminders already scheduled survive an app start without a connection.
+  useEffect(() => {
+    if (loading || authLoading) return;
+    if (!isAuthenticated) {
+      cancelReviewReminders();
+      return;
+    }
+    if (!kidsLoaded) return;
+    syncReminders();
+  }, [loading, authLoading, isAuthenticated, kidsLoaded, syncReminders]);
+
   const loadAppSettings = async () => {
     try {
-      const [savedLanguage, savedTheme] = await Promise.all([
+      const [savedLanguage, savedTheme, savedReminders, savedReminderHour] = await Promise.all([
         AsyncStorage.getItem('app.language'),
         AsyncStorage.getItem('app.darkMode'),
+        AsyncStorage.getItem('app.remindersEnabled'),
+        AsyncStorage.getItem('app.reminderHour'),
       ]);
 
       if (savedLanguage) setLanguage(savedLanguage);
       if (savedTheme) setIsDarkMode(savedTheme === 'true');
+      if (savedReminders) setRemindersEnabledState(savedReminders === 'true');
+      const hour = parseInt(savedReminderHour, 10);
+      if (hour >= 0 && hour <= 23) setReminderHourState(hour);
     } catch (error) {
       console.error('Error loading app settings:', error);
     } finally {
@@ -51,6 +84,7 @@ export const AppProvider = ({ children }) => {
       const response = await kidsAPI.getAll();
       if (response.success) {
         setKids(response.kids);
+        setKidsLoaded(true);
 
         // Set selected kid
         if (selectedKidId) {
@@ -140,6 +174,23 @@ export const AppProvider = ({ children }) => {
     await AsyncStorage.setItem('app.darkMode', newMode.toString());
   };
 
+  // Turning reminders on asks the OS for permission; resolves to false if
+  // the parent declines, in which case reminders stay off.
+  const setRemindersEnabled = async (enabled) => {
+    if (enabled) {
+      const granted = await requestNotificationPermission();
+      if (!granted) return false;
+    }
+    setRemindersEnabledState(enabled);
+    await AsyncStorage.setItem('app.remindersEnabled', enabled.toString());
+    return true;
+  };
+
+  const setReminderHour = async (hour) => {
+    setReminderHourState(hour);
+    await AsyncStorage.setItem('app.reminderHour', hour.toString());
+  };
+
   const refreshKids = async () => {
     await loadKids(selectedKid?.id);
   };
@@ -157,6 +208,11 @@ export const AppProvider = ({ children }) => {
     changeLanguage,
     toggleDarkMode,
     refreshKids,
+    remindersEnabled,
+    reminderHour,
+    setRemindersEnabled,
+    setReminderHour,
+    syncReminders,
     isArabic: language === 'ar',
   };
 

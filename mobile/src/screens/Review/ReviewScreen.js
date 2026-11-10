@@ -19,7 +19,7 @@ import { MASTERY_LEVELS } from '../../constants';
  * Reviewing a verse awards points and reschedules its next review.
  */
 const ReviewScreen = () => {
-  const { selectedKid } = useApp();
+  const { selectedKid, remindersEnabled, setRemindersEnabled, syncReminders } = useApp();
   const [dueVerses, setDueVerses] = useState([]);
   const [stats, setStats] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -60,6 +60,7 @@ const ReviewScreen = () => {
 
       if (res.success) {
         setDueVerses(prev => prev.filter(v => v.id !== item.id));
+        syncReminders();
         if (quality !== 'forgot') {
           Alert.alert('أحسنت! ⭐', `+${res.pointsEarned} نقطة — المراجعة القادمة مجدولة تلقائياً`);
         }
@@ -136,7 +137,15 @@ const ReviewScreen = () => {
         <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(); }} />
       }
       ListHeaderComponent={
-        stats && (
+        <>
+        {!remindersEnabled && (
+          <TouchableOpacity style={styles.reminderBanner} onPress={() => setRemindersEnabled(true)}>
+            <Text style={styles.reminderBannerText}>
+              🔔 فعّل التذكير اليومي حتى لا تفوتك مراجعة
+            </Text>
+          </TouchableOpacity>
+        )}
+        {stats && (
           <View style={styles.statsCard}>
             <View style={styles.statBox}>
               <Text style={styles.statNumber}>{dueVerses.length}</Text>
@@ -151,7 +160,8 @@ const ReviewScreen = () => {
               <Text style={styles.statLabel}>إجمالي المحفوظ</Text>
             </View>
           </View>
-        )
+        )}
+        </>
       }
       ListEmptyComponent={
         <View style={styles.center}>
@@ -188,6 +198,18 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZES.lg,
     color: COLORS.textSecondary,
     textAlign: 'center',
+  },
+  reminderBanner: {
+    backgroundColor: COLORS.secondaryLight,
+    borderRadius: BORDER_RADIUS.md,
+    padding: SPACING.md,
+    marginBottom: SPACING.md,
+  },
+  reminderBannerText: {
+    fontSize: FONT_SIZES.md,
+    color: COLORS.text,
+    textAlign: 'center',
+    fontWeight: '600',
   },
   statsCard: {
     backgroundColor: COLORS.accent,

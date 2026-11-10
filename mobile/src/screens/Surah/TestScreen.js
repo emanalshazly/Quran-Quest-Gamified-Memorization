@@ -23,7 +23,7 @@ import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS, SHADOWS } from '../../const
  */
 const TestScreen = ({ route, navigation }) => {
   const { surah, verses, startIndex = 0, memorizedNumbers = [] } = route.params;
-  const { selectedKid } = useApp();
+  const { selectedKid, syncReminders } = useApp();
 
   const [index, setIndex] = useState(Math.min(startIndex, verses.length - 1));
   const [showVerse, setShowVerse] = useState(false);
@@ -112,6 +112,7 @@ const TestScreen = ({ route, navigation }) => {
         });
         if (memorizeRes.success) {
           pointsEarned = memorizeRes.pointsEarned || 0;
+          syncReminders();
           badges = memorizeRes.badgesEarned || [];
         }
       }

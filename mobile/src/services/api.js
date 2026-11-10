@@ -71,6 +71,8 @@ export const memorizationAPI = {
   markAsMemorized: (data) => api.post('/memorization/memorize', data),
   submitReview: (data) => api.post('/memorization/review', data),
   getDueVerses: (kidId) => api.get(`/memorization/due/${kidId}`),
+  getUpcomingReviews: (kidId, days = 7) =>
+    api.get(`/memorization/upcoming/${kidId}`, { params: { days } }),
   getProgressMap: (kidId) => api.get(`/memorization/progress-map/${kidId}`),
   getStats: (kidId) => api.get(`/memorization/stats/${kidId}`),
   getHistory: (kidId) => api.get(`/memorization/history/${kidId}`),
