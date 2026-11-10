@@ -75,16 +75,29 @@ router.post('/', authenticateUser, async (req, res) => {
             });
         }
 
-        // Check if user already has 5 kids (subscription limit)
+        // Kid limit depends on subscription tier: free=1, pro=3, family=5
+        const TIER_KID_LIMITS = { free: 1, pro: 3, family: 5 };
+
+        const { data: userRow } = await supabase
+            .from('users')
+            .select('subscription_tier')
+            .eq('id', req.user.id)
+            .single();
+
+        const tier = userRow?.subscription_tier || 'free';
+        const kidLimit = TIER_KID_LIMITS[tier] || 1;
+
         const { count } = await supabase
             .from('kids')
             .select('*', { count: 'exact', head: true })
             .eq('user_id', req.user.id);
 
-        if (count >= 5) {
+        if (count >= kidLimit) {
             return res.status(403).json({
                 success: false,
-                message: 'Maximum number of kids (5) reached'
+                message: `Maximum number of kid profiles (${kidLimit}) reached for the ${tier} plan`,
+                currentTier: tier,
+                kidLimit
             });
         }
 

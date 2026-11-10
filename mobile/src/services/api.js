@@ -1,7 +1,6 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const API_BASE_URL = 'http://localhost:3000/api';
+import { API_BASE_URL } from '../config/env';
 
 // Create axios instance
 const api = axios.create({
@@ -72,6 +71,7 @@ export const memorizationAPI = {
   markAsMemorized: (data) => api.post('/memorization/memorize', data),
   submitReview: (data) => api.post('/memorization/review', data),
   getDueVerses: (kidId) => api.get(`/memorization/due/${kidId}`),
+  getProgressMap: (kidId) => api.get(`/memorization/progress-map/${kidId}`),
   getStats: (kidId) => api.get(`/memorization/stats/${kidId}`),
   getHistory: (kidId) => api.get(`/memorization/history/${kidId}`),
 };

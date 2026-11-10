@@ -64,10 +64,26 @@ router.get('/leaderboard', authenticateUser, async (req, res) => {
 
         if (error) throw error;
 
+        // Privacy (COPPA): on the global leaderboard, never expose other
+        // families' children's names/avatars. Own kids keep their names;
+        // everyone else is anonymized to "Hafiz #rank".
+        const sanitized = (leaderboard || []).map((entry, index) => {
+            const isOwnKid = entry.user_id === req.user.id;
+            const rank = entry.global_rank || index + 1;
+            return {
+                rank,
+                total_points: entry.total_points,
+                level: entry.kids?.level || 1,
+                name: isOwnKid ? entry.kids?.name : `حافظ #${rank}`,
+                avatar: isOwnKid ? entry.kids?.avatar : 'anonymous_avatar.png',
+                isOwnKid
+            };
+        });
+
         res.json({
             success: true,
             type,
-            leaderboard
+            leaderboard: type === 'family' ? leaderboard : sanitized
         });
     } catch (error) {
         console.error('Get leaderboard error:', error);

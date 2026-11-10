@@ -5,10 +5,11 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- Users Table (Parent Accounts)
+-- Linked 1:1 to Supabase Auth (auth.users). Passwords are managed by
+-- Supabase Auth, so there is no password column here.
 CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     email VARCHAR(255) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
     subscription_tier VARCHAR(20) DEFAULT 'free' CHECK (subscription_tier IN ('free', 'pro', 'family')),
     subscription_expires_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT NOW(),
@@ -16,6 +17,23 @@ CREATE TABLE users (
     last_login_at TIMESTAMP,
     is_active BOOLEAN DEFAULT true
 );
+
+-- Auto-create a public.users row whenever a new auth user signs up
+CREATE OR REPLACE FUNCTION handle_new_auth_user()
+RETURNS TRIGGER
+SECURITY DEFINER SET search_path = public
+AS $$
+BEGIN
+    INSERT INTO public.users (id, email)
+    VALUES (NEW.id, NEW.email)
+    ON CONFLICT (id) DO NOTHING;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER on_auth_user_created
+AFTER INSERT ON auth.users
+FOR EACH ROW EXECUTE FUNCTION handle_new_auth_user();
 
 -- Kids Profiles Table
 CREATE TABLE kids (
@@ -31,11 +49,41 @@ CREATE TABLE kids (
     preferred_reciter VARCHAR(50) DEFAULT 'minshawi',
     language_preference VARCHAR(10) DEFAULT 'ar' CHECK (language_preference IN ('ar', 'en')),
     created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW(),
-    CONSTRAINT max_kids_per_user CHECK (
-        (SELECT COUNT(*) FROM kids WHERE user_id = kids.user_id) <= 5
-    )
+    updated_at TIMESTAMP DEFAULT NOW()
 );
+
+-- PostgreSQL does not allow subqueries in CHECK constraints, so the
+-- per-subscription kid limit (free=1, pro=3, family=5) is enforced
+-- with a trigger instead.
+CREATE OR REPLACE FUNCTION enforce_kids_limit()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_tier VARCHAR(20);
+    v_count INTEGER;
+    v_limit INTEGER;
+BEGIN
+    SELECT subscription_tier INTO v_tier FROM users WHERE id = NEW.user_id;
+
+    v_limit := CASE v_tier
+        WHEN 'family' THEN 5
+        WHEN 'pro' THEN 3
+        ELSE 1
+    END;
+
+    SELECT COUNT(*) INTO v_count FROM kids WHERE user_id = NEW.user_id;
+
+    IF v_count >= v_limit THEN
+        RAISE EXCEPTION 'Kid profile limit reached for % tier (max %)', COALESCE(v_tier, 'free'), v_limit
+            USING ERRCODE = 'check_violation';
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER enforce_kids_limit_trigger
+BEFORE INSERT ON kids
+FOR EACH ROW EXECUTE FUNCTION enforce_kids_limit();
 
 -- Surahs Table
 CREATE TABLE surahs (
@@ -174,7 +222,8 @@ CREATE TABLE points_history (
     points_earned INTEGER NOT NULL,
     activity_type VARCHAR(50) NOT NULL,
     activity_description TEXT,
-    reference_id UUID,
+    -- TEXT, not UUID: references can be verse ids (integers) or battle/recording UUIDs
+    reference_id TEXT,
     created_at TIMESTAMP DEFAULT NOW()
 );
 
@@ -305,6 +354,53 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Atomic points increment (avoids read-modify-write races) that also
+-- recalculates the kid's level from the running total.
+CREATE OR REPLACE FUNCTION increment_kid_points(p_kid_id UUID, p_points INTEGER)
+RETURNS INTEGER AS $$
+DECLARE
+    v_total INTEGER;
+    v_level INTEGER;
+BEGIN
+    UPDATE kids
+    SET total_points = GREATEST(0, total_points + p_points)
+    WHERE id = p_kid_id
+    RETURNING total_points INTO v_total;
+
+    IF v_total IS NULL THEN
+        RAISE EXCEPTION 'Kid % not found', p_kid_id;
+    END IF;
+
+    -- Level thresholds (level 1 at 0 points, then 100, 250, 500, ...)
+    v_level := CASE
+        WHEN v_total >= 35000 THEN 20
+        WHEN v_total >= 30000 THEN 19
+        WHEN v_total >= 25000 THEN 18
+        WHEN v_total >= 21000 THEN 17
+        WHEN v_total >= 18000 THEN 16
+        WHEN v_total >= 15000 THEN 15
+        WHEN v_total >= 12500 THEN 14
+        WHEN v_total >= 10000 THEN 13
+        WHEN v_total >= 8000  THEN 12
+        WHEN v_total >= 6500  THEN 11
+        WHEN v_total >= 5000  THEN 10
+        WHEN v_total >= 4000  THEN 9
+        WHEN v_total >= 3000  THEN 8
+        WHEN v_total >= 2000  THEN 7
+        WHEN v_total >= 1500  THEN 6
+        WHEN v_total >= 1000  THEN 5
+        WHEN v_total >= 500   THEN 4
+        WHEN v_total >= 250   THEN 3
+        WHEN v_total >= 100   THEN 2
+        ELSE 1
+    END;
+
+    UPDATE kids SET level = v_level WHERE id = p_kid_id AND level <> v_level;
+
+    RETURN v_total;
+END;
+$$ LANGUAGE plpgsql;
+
 -- Function to update leaderboard
 CREATE OR REPLACE FUNCTION update_leaderboard()
 RETURNS TRIGGER AS $$
@@ -350,6 +446,10 @@ FOR EACH ROW
 EXECUTE FUNCTION update_leaderboard();
 
 -- Row Level Security (RLS) Policies for Supabase
+--
+-- NOTE: the backend API uses the service-role key, which bypasses RLS and
+-- enforces ownership in code. These policies protect direct access from the
+-- mobile app (anon key) and any other client.
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE kids ENABLE ROW LEVEL SECURITY;
 ALTER TABLE memorized_verses ENABLE ROW LEVEL SECURITY;
@@ -358,6 +458,9 @@ ALTER TABLE badges ENABLE ROW LEVEL SECURITY;
 ALTER TABLE daily_challenges ENABLE ROW LEVEL SECURITY;
 ALTER TABLE points_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE leaderboard ENABLE ROW LEVEL SECURITY;
+ALTER TABLE battle_challenges ENABLE ROW LEVEL SECURITY;
+ALTER TABLE parent_goals ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies for users
 CREATE POLICY "Users can view their own data"
@@ -371,15 +474,76 @@ CREATE POLICY "Users can update their own data"
 -- RLS Policies for kids
 CREATE POLICY "Users can view their own kids"
     ON kids FOR SELECT
-    USING (user_id IN (SELECT id FROM users WHERE auth.uid() = id));
+    USING (auth.uid() = user_id);
 
 CREATE POLICY "Users can insert their own kids"
     ON kids FOR INSERT
-    WITH CHECK (user_id IN (SELECT id FROM users WHERE auth.uid() = id));
+    WITH CHECK (auth.uid() = user_id);
 
 CREATE POLICY "Users can update their own kids"
     ON kids FOR UPDATE
-    USING (user_id IN (SELECT id FROM users WHERE auth.uid() = id));
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete their own kids"
+    ON kids FOR DELETE
+    USING (auth.uid() = user_id);
+
+-- Helper predicate used by the kid-owned tables below:
+--   kid_id IN (SELECT id FROM kids WHERE user_id = auth.uid())
+
+-- RLS for memorized_verses
+CREATE POLICY "Parents manage their kids' memorized verses"
+    ON memorized_verses FOR ALL
+    USING (kid_id IN (SELECT id FROM kids WHERE user_id = auth.uid()))
+    WITH CHECK (kid_id IN (SELECT id FROM kids WHERE user_id = auth.uid()));
+
+-- RLS for recordings
+CREATE POLICY "Parents manage their kids' recordings"
+    ON recordings FOR ALL
+    USING (kid_id IN (SELECT id FROM kids WHERE user_id = auth.uid()))
+    WITH CHECK (kid_id IN (SELECT id FROM kids WHERE user_id = auth.uid()));
+
+-- RLS for badges (read-only for clients; awarded by the backend)
+CREATE POLICY "Parents view their kids' badges"
+    ON badges FOR SELECT
+    USING (kid_id IN (SELECT id FROM kids WHERE user_id = auth.uid()));
+
+-- RLS for daily_challenges
+CREATE POLICY "Parents manage their kids' daily challenges"
+    ON daily_challenges FOR ALL
+    USING (kid_id IN (SELECT id FROM kids WHERE user_id = auth.uid()))
+    WITH CHECK (kid_id IN (SELECT id FROM kids WHERE user_id = auth.uid()));
+
+-- RLS for points_history (read-only for clients)
+CREATE POLICY "Parents view their kids' points history"
+    ON points_history FOR SELECT
+    USING (kid_id IN (SELECT id FROM kids WHERE user_id = auth.uid()));
+
+-- RLS for notifications
+CREATE POLICY "Users manage their own notifications"
+    ON notifications FOR ALL
+    USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
+
+-- RLS for leaderboard: family rows only. The global leaderboard is served
+-- by the backend in anonymized form to avoid exposing other children's data.
+CREATE POLICY "Parents view their own family leaderboard"
+    ON leaderboard FOR SELECT
+    USING (auth.uid() = user_id);
+
+-- RLS for battle_challenges (only battles involving the family's kids)
+CREATE POLICY "Parents view their kids' battles"
+    ON battle_challenges FOR SELECT
+    USING (
+        challenger_id IN (SELECT id FROM kids WHERE user_id = auth.uid())
+        OR opponent_id IN (SELECT id FROM kids WHERE user_id = auth.uid())
+    );
+
+-- RLS for parent_goals
+CREATE POLICY "Parents manage their kids' goals"
+    ON parent_goals FOR ALL
+    USING (kid_id IN (SELECT id FROM kids WHERE user_id = auth.uid()))
+    WITH CHECK (kid_id IN (SELECT id FROM kids WHERE user_id = auth.uid()));
 
 -- Surahs and Verses are public (read-only)
 ALTER TABLE surahs ENABLE ROW LEVEL SECURITY;
@@ -392,5 +556,3 @@ CREATE POLICY "Surahs are viewable by everyone"
 CREATE POLICY "Verses are viewable by everyone"
     ON verses FOR SELECT
     USING (true);
-
-COMMIT;
