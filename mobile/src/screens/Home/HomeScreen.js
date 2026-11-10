@@ -14,7 +14,7 @@ import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS, SHADOWS } from '../../const
 import { JUZ_NAMES } from '../../constants';
 
 const HomeScreen = ({ navigation }) => {
-  const { selectedKid, isArabic } = useApp();
+  const { selectedKid, isArabic, isOnline, pendingSyncCount } = useApp();
   const [surahs, setSurahs] = useState([]);
   const [subscriptionTier, setSubscriptionTier] = useState('free');
   const [progressBySurah, setProgressBySurah] = useState({});
@@ -274,6 +274,16 @@ const HomeScreen = ({ navigation }) => {
         style={styles.scrollView}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
+        {(!isOnline || pendingSyncCount > 0) && (
+          <View style={styles.offlineBanner}>
+            <Text style={styles.offlineBannerText}>
+              {!isOnline
+                ? '📴 أنت غير متصل — يمكنك متابعة الحفظ والمراجعة'
+                : '🔄 جاري إرسال ما أنجزته دون اتصال'}
+              {pendingSyncCount > 0 ? ` (${pendingSyncCount} بانتظار الإرسال)` : ''}
+            </Text>
+          </View>
+        )}
         {renderKidCard()}
         {renderDailyChallenge()}
         {renderQuestMap()}
@@ -320,6 +330,17 @@ const styles = StyleSheet.create({
     color: COLORS.card,
     fontSize: FONT_SIZES.lg,
     fontWeight: 'bold',
+  },
+  offlineBanner: {
+    backgroundColor: COLORS.warning,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+  },
+  offlineBannerText: {
+    color: COLORS.card,
+    fontSize: FONT_SIZES.sm,
+    textAlign: 'center',
+    fontWeight: '600',
   },
   kidCard: {
     backgroundColor: COLORS.primary,

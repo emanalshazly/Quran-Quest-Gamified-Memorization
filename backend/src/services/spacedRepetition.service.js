@@ -20,9 +20,10 @@ class SpacedRepetitionService {
      * @param {number} params.easeFactor - Current ease factor (default: 2.5)
      * @param {number} params.intervalDays - Current interval in days (default: 0)
      * @param {number} params.repetitionCount - Number of successful repetitions (default: 0)
+     * @param {Date} params.now - When the review happened (default: now)
      * @returns {Object} Next review schedule
      */
-    calculateNextReview({ quality, easeFactor = 2.5, intervalDays = 0, repetitionCount = 0 }) {
+    calculateNextReview({ quality, easeFactor = 2.5, intervalDays = 0, repetitionCount = 0, now = new Date() }) {
         // Validate quality
         if (quality < 0 || quality > 5) {
             throw new Error('Quality must be between 0 and 5');
@@ -57,7 +58,7 @@ class SpacedRepetitionService {
         }
 
         // Calculate next review date
-        const nextReviewDate = new Date();
+        const nextReviewDate = new Date(now);
         nextReviewDate.setDate(nextReviewDate.getDate() + newInterval);
 
         // Determine mastery level

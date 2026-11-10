@@ -10,6 +10,9 @@ import {
 import Sound from 'react-native-sound';
 import { useApp } from '../../contexts/AppContext';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS, SHADOWS } from '../../constants/theme';
+import { RECITERS } from '../../constants';
+import { getVerseAudioUrl } from '../../utils/audio';
+import { getLocalVersePath } from '../../services/audioDownloads';
 
 /**
  * Memorization Mode: one verse at a time, large Uthmani-style text,
@@ -17,14 +20,36 @@ import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS, SHADOWS } from '../../const
  */
 const MemorizationScreen = ({ route, navigation }) => {
   const { surah, verses, startIndex = 0 } = route.params;
-  const { selectedKid } = useApp();
+  const { selectedKid, isOnline } = useApp();
   const [index, setIndex] = useState(Math.min(startIndex, verses.length - 1));
   const [repeatCount, setRepeatCount] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [localPath, setLocalPath] = useState(null);
   const soundRef = useRef(null);
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
   const verse = verses[index];
+  const reciterId = selectedKid?.preferred_reciter || 'minshawi';
+  const reciter = Object.values(RECITERS).find(r => r.id === reciterId) || RECITERS.MINSHAWI;
+  const audioUrl = verse
+    ? (surah.surah_number
+        ? getVerseAudioUrl(reciterId, surah.surah_number, verse.verse_number)
+        : verse.audio_url)
+    : null;
+
+  // Prefer a downloaded copy of this verse when there is one
+  useEffect(() => {
+    let cancelled = false;
+    setLocalPath(null);
+    if (verse && surah.surah_number) {
+      getLocalVersePath(reciterId, surah.surah_number, verse.verse_number).then((path) => {
+        if (!cancelled) setLocalPath(path);
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [reciterId, surah.surah_number, verse?.verse_number]);
 
   useEffect(() => {
     return () => {
@@ -44,10 +69,14 @@ const MemorizationScreen = ({ route, navigation }) => {
   };
 
   const playAudio = () => {
-    if (!verse?.audio_url) {
+    if (!localPath && !audioUrl) {
+      Alert.alert('لا يوجد تسجيل', 'تلاوة هذه الآية غير متوفرة');
+      return;
+    }
+    if (!localPath && !isOnline) {
       Alert.alert(
-        'لا يوجد تسجيل',
-        'تلاوة هذه الآية غير متوفرة بعد. أضف روابط الصوت في قاعدة البيانات (audio_url).'
+        'لا يوجد اتصال',
+        'هذه التلاوة غير منزّلة على الجهاز. نزّلها من صفحة السورة لتستمع إليها دون اتصال.'
       );
       return;
     }
@@ -58,7 +87,11 @@ const MemorizationScreen = ({ route, navigation }) => {
     }
 
     setPlaying(true);
-    const sound = new Sound(verse.audio_url, null, (error) => {
+    // react-native-sound: basePath '' for an absolute file path, null for a URL
+    const sound = localPath
+      ? new Sound(localPath, '', onLoaded)
+      : new Sound(audioUrl, null, onLoaded);
+    function onLoaded(error) {
       if (error) {
         setPlaying(false);
         Alert.alert('خطأ', 'تعذر تشغيل التلاوة');
@@ -69,7 +102,7 @@ const MemorizationScreen = ({ route, navigation }) => {
         sound.release();
         soundRef.current = null;
       });
-    });
+    }
     soundRef.current = sound;
   };
 
@@ -122,6 +155,9 @@ const MemorizationScreen = ({ route, navigation }) => {
 
       {/* Verse display */}
       <Animated.View style={[styles.verseCard, { opacity: fadeAnim }]}>
+        {verse.bismillah_prefix ? (
+          <Text style={styles.bismillahText}>{verse.bismillah_prefix}</Text>
+        ) : null}
         <Text style={styles.verseText}>{verse.text_ar}</Text>
         <Text style={styles.verseNumberBadge}>﴿ {verse.verse_number} ﴾</Text>
         {repeatCount > 0 && (
@@ -138,7 +174,7 @@ const MemorizationScreen = ({ route, navigation }) => {
         >
           <Text style={styles.playIcon}>{playing ? '🔊' : '▶️'}</Text>
           <Text style={styles.playText}>
-            {playing ? 'جاري التشغيل...' : `استمع (${selectedKid?.preferred_reciter || 'minshawi'})`}
+            {playing ? 'جاري التشغيل...' : `استمع — ${reciter.nameAr}`}
           </Text>
         </TouchableOpacity>
 
@@ -232,6 +268,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 62,
     writingDirection: 'rtl',
+  },
+  bismillahText: {
+    fontSize: FONT_SIZES.xl,
+    color: COLORS.primary,
+    textAlign: 'center',
+    marginBottom: SPACING.lg,
   },
   verseNumberBadge: {
     fontSize: FONT_SIZES.xl,

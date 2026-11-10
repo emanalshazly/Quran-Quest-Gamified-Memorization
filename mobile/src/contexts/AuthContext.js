@@ -2,6 +2,7 @@ import React, { createContext, useState, useContext, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../config/supabase';
 import { authAPI } from '../services/api';
+import { clearOfflineData } from '../services/offline';
 
 const AuthContext = createContext({});
 
@@ -87,6 +88,8 @@ export const AuthProvider = ({ children }) => {
       setSession(null);
       setUser(null);
       await AsyncStorage.removeItem('supabase.auth.token');
+      // Cached data and queued actions belong to this account only
+      await clearOfflineData();
       return { success: true };
     } catch (error) {
       console.error('Logout error:', error);

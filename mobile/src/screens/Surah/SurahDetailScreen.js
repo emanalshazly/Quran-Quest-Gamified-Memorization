@@ -10,6 +10,8 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { useApp } from '../../contexts/AppContext';
 import { surahsAPI } from '../../services/api';
+import { pendingVerseIds } from '../../services/offline';
+import AudioDownloadCard from '../../components/AudioDownloadCard';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS, SHADOWS } from '../../constants/theme';
 
 const SurahDetailScreen = ({ route, navigation }) => {
@@ -17,6 +19,7 @@ const SurahDetailScreen = ({ route, navigation }) => {
   const { selectedKid, isArabic } = useApp();
   const [surah, setSurah] = useState(null);
   const [progress, setProgress] = useState(null);
+  const [queuedVerseIds, setQueuedVerseIds] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useFocusEffect(
@@ -35,6 +38,7 @@ const SurahDetailScreen = ({ route, navigation }) => {
       ]);
 
       if (surahRes.success) setSurah(surahRes.surah);
+      if (selectedKid) setQueuedVerseIds(await pendingVerseIds(selectedKid.id, 'test_result'));
       if (progressRes?.success) setProgress(progressRes.progress);
     } catch (error) {
       console.error('Error loading surah:', error);
@@ -60,7 +64,13 @@ const SurahDetailScreen = ({ route, navigation }) => {
   }
 
   const verses = surah.verses || [];
-  const memorizedNumbers = progress?.memorizedVerses || [];
+  // Includes verses memorized offline that are still waiting to be synced
+  const memorizedNumbers = [
+    ...new Set([
+      ...(progress?.memorizedVerses || []),
+      ...verses.filter(v => queuedVerseIds.includes(v.id)).map(v => v.verse_number),
+    ]),
+  ];
   const firstUnmemorizedIndex = verses.findIndex(
     v => !memorizedNumbers.includes(v.verse_number)
   );
@@ -147,11 +157,13 @@ const SurahDetailScreen = ({ route, navigation }) => {
         </TouchableOpacity>
       </View>
 
+      {verses.length > 0 && <AudioDownloadCard surah={surah} />}
+
       {verses.length === 0 && (
         <View style={styles.noVersesBox}>
           <Text style={styles.noVersesText}>
             آيات هذه السورة لم تُحمَّل في قاعدة البيانات بعد.
-            {'\n'}راجع database/seeds لإضافة نص الآيات من مصدر موثق.
+            {'\n'}شغّل database/seeds/002_quran_data.sql لتحميل نص القرآن.
           </Text>
         </View>
       )}
@@ -167,6 +179,9 @@ const SurahDetailScreen = ({ route, navigation }) => {
                 key={verse.id}
                 style={[styles.verseCard, isMemorized && styles.verseCardMemorized]}
               >
+                {verse.bismillah_prefix ? (
+                  <Text style={styles.bismillahText}>{verse.bismillah_prefix}</Text>
+                ) : null}
                 <Text style={styles.verseText}>
                   {verse.text_ar}{' '}
                   <Text style={styles.verseNumber}>﴿{verse.verse_number}﴾</Text>
@@ -336,6 +351,12 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     textAlign: 'right',
     lineHeight: 38,
+  },
+  bismillahText: {
+    fontSize: FONT_SIZES.lg,
+    color: COLORS.primary,
+    textAlign: 'center',
+    marginBottom: SPACING.sm,
   },
   verseNumber: {
     color: COLORS.primary,

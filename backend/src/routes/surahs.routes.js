@@ -16,26 +16,19 @@ router.get('/', authenticateUser, async (req, res) => {
             .eq('id', req.user.id)
             .single();
 
-        const isFree = user.subscription_tier === 'free';
-
-        // For free users, only show free surahs
-        let query = supabase
+        // All surahs are listed so the Quest Map can show locked ones;
+        // access to non-free content is enforced on the detail/verse routes.
+        const { data: surahs, error } = await supabase
             .from('surahs')
             .select('*')
             .order('surah_number', { ascending: true });
-
-        if (isFree) {
-            query = query.eq('is_free', true);
-        }
-
-        const { data: surahs, error } = await query;
 
         if (error) throw error;
 
         res.json({
             success: true,
             surahs,
-            subscriptionTier: user.subscription_tier
+            subscriptionTier: user?.subscription_tier || 'free'
         });
     } catch (error) {
         console.error('Get surahs error:', error);

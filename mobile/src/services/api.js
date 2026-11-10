@@ -1,6 +1,9 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE_URL } from '../config/env';
+import { createResponseCache } from '../offline/responseCache';
+
+export const responseCache = createResponseCache({ storage: AsyncStorage });
 
 // Create axios instance
 const api = axios.create({
@@ -27,11 +30,26 @@ api.interceptors.request.use(
 
 // Handle responses
 api.interceptors.response.use(
-  (response) => response.data,
-  (error) => {
+  (response) => {
+    // Keep the last good copy of every GET so it can be shown offline
+    if (response.config.method === 'get') {
+      responseCache.put(response.config.url, response.config.params, response.data);
+    }
+    return response.data;
+  },
+  async (error) => {
     if (error.response?.status === 401) {
       // Handle unauthorized - logout user
       AsyncStorage.removeItem('supabase.auth.token');
+    }
+
+    // No response at all means the server could not be reached: fall back
+    // to the last cached copy of a GET, flagged so screens can say so.
+    if (!error.response && error.config?.method === 'get') {
+      const cached = await responseCache.get(error.config.url, error.config.params);
+      if (cached) {
+        return { ...cached.data, fromCache: true, cachedAt: cached.savedAt };
+      }
     }
     return Promise.reject(error);
   }
@@ -71,6 +89,8 @@ export const memorizationAPI = {
   markAsMemorized: (data) => api.post('/memorization/memorize', data),
   submitReview: (data) => api.post('/memorization/review', data),
   getDueVerses: (kidId) => api.get(`/memorization/due/${kidId}`),
+  getUpcomingReviews: (kidId, days = 7) =>
+    api.get(`/memorization/upcoming/${kidId}`, { params: { days } }),
   getProgressMap: (kidId) => api.get(`/memorization/progress-map/${kidId}`),
   getStats: (kidId) => api.get(`/memorization/stats/${kidId}`),
   getHistory: (kidId) => api.get(`/memorization/history/${kidId}`),
