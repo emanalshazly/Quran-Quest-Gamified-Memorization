@@ -113,6 +113,8 @@ CREATE TABLE verses (
     text_ar TEXT NOT NULL,
     text_transliteration TEXT,
     text_translation_en TEXT,
+    -- Basmala shown before verse 1 (all surahs except 1 and 9); not part of the verse itself
+    bismillah_prefix TEXT,
     audio_url VARCHAR(255),
     created_at TIMESTAMP DEFAULT NOW(),
     UNIQUE (surah_id, verse_number)
@@ -409,7 +411,7 @@ BEGIN
     INSERT INTO leaderboard (kid_id, user_id, total_points, last_updated)
     SELECT k.id, k.user_id, k.total_points, NOW()
     FROM kids k
-    WHERE k.id = NEW.kid_id
+    WHERE k.id = NEW.id
     ON CONFLICT (kid_id) DO UPDATE
     SET total_points = EXCLUDED.total_points,
         last_updated = NOW();

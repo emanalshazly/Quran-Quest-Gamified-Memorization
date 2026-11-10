@@ -11,10 +11,12 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import { useApp } from '../../contexts/AppContext';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS, SHADOWS } from '../../constants/theme';
+import { RECITERS } from '../../constants';
 
 const SettingsScreen = ({ navigation }) => {
   const { logout, user } = useAuth();
-  const { language, changeLanguage, isDarkMode, toggleDarkMode, selectedKid } = useApp();
+  const { language, changeLanguage, isDarkMode, toggleDarkMode, selectedKid, updateKid } = useApp();
+  const currentReciter = selectedKid?.preferred_reciter || 'minshawi';
 
   const confirmLogout = () => {
     Alert.alert('تسجيل الخروج', 'هل تريد تسجيل الخروج؟', [
@@ -71,6 +73,21 @@ const SettingsScreen = ({ navigation }) => {
         />
       </View>
 
+      {selectedKid && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>القارئ المفضل لـ {selectedKid.name}</Text>
+          {Object.values(RECITERS).map((reciter) => (
+            <Row
+              key={reciter.id}
+              icon={currentReciter === reciter.id ? '🔊' : '🎧'}
+              label={reciter.nameAr}
+              value={currentReciter === reciter.id ? '✓' : ''}
+              onPress={() => updateKid(selectedKid.id, { preferred_reciter: reciter.id })}
+            />
+          ))}
+        </View>
+      )}
+
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>الاشتراك</Text>
         <Row icon="⭐" label="الباقة الحالية" value="مجاني" />
@@ -84,6 +101,10 @@ const SettingsScreen = ({ navigation }) => {
         <Text style={styles.logoutText}>تسجيل الخروج</Text>
       </TouchableOpacity>
 
+      <Text style={styles.attribution}>
+        نص القرآن الكريم: مشروع تنزيل (Tanzil Project) — tanzil.net{'\n'}
+        التلاوات الصوتية: everyayah.com
+      </Text>
       <Text style={styles.version}>Quran Quest v1.0.0</Text>
     </ScrollView>
   );
@@ -145,6 +166,13 @@ const styles = StyleSheet.create({
     color: COLORS.card,
     fontSize: FONT_SIZES.lg,
     fontWeight: 'bold',
+  },
+  attribution: {
+    fontSize: FONT_SIZES.xs,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: SPACING.sm,
   },
   version: {
     fontSize: FONT_SIZES.xs,

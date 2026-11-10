@@ -151,7 +151,7 @@ const SurahDetailScreen = ({ route, navigation }) => {
         <View style={styles.noVersesBox}>
           <Text style={styles.noVersesText}>
             آيات هذه السورة لم تُحمَّل في قاعدة البيانات بعد.
-            {'\n'}راجع database/seeds لإضافة نص الآيات من مصدر موثق.
+            {'\n'}شغّل database/seeds/002_quran_data.sql لتحميل نص القرآن.
           </Text>
         </View>
       )}
@@ -167,6 +167,9 @@ const SurahDetailScreen = ({ route, navigation }) => {
                 key={verse.id}
                 style={[styles.verseCard, isMemorized && styles.verseCardMemorized]}
               >
+                {verse.bismillah_prefix ? (
+                  <Text style={styles.bismillahText}>{verse.bismillah_prefix}</Text>
+                ) : null}
                 <Text style={styles.verseText}>
                   {verse.text_ar}{' '}
                   <Text style={styles.verseNumber}>﴿{verse.verse_number}﴾</Text>
@@ -336,6 +339,12 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     textAlign: 'right',
     lineHeight: 38,
+  },
+  bismillahText: {
+    fontSize: FONT_SIZES.lg,
+    color: COLORS.primary,
+    textAlign: 'center',
+    marginBottom: SPACING.sm,
   },
   verseNumber: {
     color: COLORS.primary,

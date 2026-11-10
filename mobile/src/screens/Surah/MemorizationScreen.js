@@ -10,6 +10,8 @@ import {
 import Sound from 'react-native-sound';
 import { useApp } from '../../contexts/AppContext';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS, SHADOWS } from '../../constants/theme';
+import { RECITERS } from '../../constants';
+import { getVerseAudioUrl } from '../../utils/audio';
 
 /**
  * Memorization Mode: one verse at a time, large Uthmani-style text,
@@ -25,6 +27,13 @@ const MemorizationScreen = ({ route, navigation }) => {
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
   const verse = verses[index];
+  const reciterId = selectedKid?.preferred_reciter || 'minshawi';
+  const reciter = Object.values(RECITERS).find(r => r.id === reciterId) || RECITERS.MINSHAWI;
+  const audioUrl = verse
+    ? (surah.surah_number
+        ? getVerseAudioUrl(reciterId, surah.surah_number, verse.verse_number)
+        : verse.audio_url)
+    : null;
 
   useEffect(() => {
     return () => {
@@ -44,11 +53,8 @@ const MemorizationScreen = ({ route, navigation }) => {
   };
 
   const playAudio = () => {
-    if (!verse?.audio_url) {
-      Alert.alert(
-        'لا يوجد تسجيل',
-        'تلاوة هذه الآية غير متوفرة بعد. أضف روابط الصوت في قاعدة البيانات (audio_url).'
-      );
+    if (!audioUrl) {
+      Alert.alert('لا يوجد تسجيل', 'تلاوة هذه الآية غير متوفرة');
       return;
     }
 
@@ -58,7 +64,7 @@ const MemorizationScreen = ({ route, navigation }) => {
     }
 
     setPlaying(true);
-    const sound = new Sound(verse.audio_url, null, (error) => {
+    const sound = new Sound(audioUrl, null, (error) => {
       if (error) {
         setPlaying(false);
         Alert.alert('خطأ', 'تعذر تشغيل التلاوة');
@@ -122,6 +128,9 @@ const MemorizationScreen = ({ route, navigation }) => {
 
       {/* Verse display */}
       <Animated.View style={[styles.verseCard, { opacity: fadeAnim }]}>
+        {verse.bismillah_prefix ? (
+          <Text style={styles.bismillahText}>{verse.bismillah_prefix}</Text>
+        ) : null}
         <Text style={styles.verseText}>{verse.text_ar}</Text>
         <Text style={styles.verseNumberBadge}>﴿ {verse.verse_number} ﴾</Text>
         {repeatCount > 0 && (
@@ -138,7 +147,7 @@ const MemorizationScreen = ({ route, navigation }) => {
         >
           <Text style={styles.playIcon}>{playing ? '🔊' : '▶️'}</Text>
           <Text style={styles.playText}>
-            {playing ? 'جاري التشغيل...' : `استمع (${selectedKid?.preferred_reciter || 'minshawi'})`}
+            {playing ? 'جاري التشغيل...' : `استمع — ${reciter.nameAr}`}
           </Text>
         </TouchableOpacity>
 
@@ -232,6 +241,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 62,
     writingDirection: 'rtl',
+  },
+  bismillahText: {
+    fontSize: FONT_SIZES.xl,
+    color: COLORS.primary,
+    textAlign: 'center',
+    marginBottom: SPACING.lg,
   },
   verseNumberBadge: {
     fontSize: FONT_SIZES.xl,

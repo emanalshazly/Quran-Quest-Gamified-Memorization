@@ -165,7 +165,12 @@ const TestScreen = ({ route, navigation }) => {
       {/* Verse (hidden by default — it's a memory test!) */}
       <View style={styles.verseCard}>
         {showVerse ? (
-          <Text style={styles.verseText}>{verse.text_ar}</Text>
+          <>
+            {verse.bismillah_prefix ? (
+              <Text style={styles.bismillahText}>{verse.bismillah_prefix}</Text>
+            ) : null}
+            <Text style={styles.verseText}>{verse.text_ar}</Text>
+          </>
         ) : (
           <Text style={styles.hiddenText}>🙈 الآية مخفية — اقرأها من ذاكرتك!</Text>
         )}
@@ -283,6 +288,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 52,
     writingDirection: 'rtl',
+  },
+  bismillahText: {
+    fontSize: FONT_SIZES.lg,
+    color: COLORS.primary,
+    textAlign: 'center',
+    marginBottom: SPACING.sm,
   },
   hiddenText: {
     fontSize: FONT_SIZES.lg,
