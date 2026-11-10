@@ -10,6 +10,7 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { useApp } from '../../contexts/AppContext';
 import { surahsAPI } from '../../services/api';
+import { pendingVerseIds } from '../../services/offline';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS, SHADOWS } from '../../constants/theme';
 
 const SurahDetailScreen = ({ route, navigation }) => {
@@ -17,6 +18,7 @@ const SurahDetailScreen = ({ route, navigation }) => {
   const { selectedKid, isArabic } = useApp();
   const [surah, setSurah] = useState(null);
   const [progress, setProgress] = useState(null);
+  const [queuedVerseIds, setQueuedVerseIds] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useFocusEffect(
@@ -35,6 +37,7 @@ const SurahDetailScreen = ({ route, navigation }) => {
       ]);
 
       if (surahRes.success) setSurah(surahRes.surah);
+      if (selectedKid) setQueuedVerseIds(await pendingVerseIds(selectedKid.id, 'test_result'));
       if (progressRes?.success) setProgress(progressRes.progress);
     } catch (error) {
       console.error('Error loading surah:', error);
@@ -60,7 +63,13 @@ const SurahDetailScreen = ({ route, navigation }) => {
   }
 
   const verses = surah.verses || [];
-  const memorizedNumbers = progress?.memorizedVerses || [];
+  // Includes verses memorized offline that are still waiting to be synced
+  const memorizedNumbers = [
+    ...new Set([
+      ...(progress?.memorizedVerses || []),
+      ...verses.filter(v => queuedVerseIds.includes(v.id)).map(v => v.verse_number),
+    ]),
+  ];
   const firstUnmemorizedIndex = verses.findIndex(
     v => !memorizedNumbers.includes(v.verse_number)
   );

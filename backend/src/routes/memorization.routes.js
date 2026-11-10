@@ -5,6 +5,41 @@ const { authenticateUser, verifyKidOwnership } = require('../middlewares/auth.mi
 const spacedRepetitionService = require('../services/spacedRepetition.service');
 const gamificationService = require('../services/gamification.service');
 
+const MAX_OFFLINE_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * The time an action actually happened, as reported by an app that was
+ * offline when it happened. Only trusted within a sane window: not in the
+ * future and not older than 30 days; otherwise the server's clock is used.
+ */
+function resolveClientTime(value) {
+    const now = new Date();
+    if (!value) return now;
+    const reported = new Date(value);
+    if (Number.isNaN(reported.getTime())) return now;
+    if (reported > now || now - reported > MAX_OFFLINE_AGE_MS) return now;
+    return reported;
+}
+
+/**
+ * Claims a client operation id. Returns false when that id was already
+ * processed, i.e. this request is a retry of one that succeeded before.
+ */
+async function claimOperation(opId, kidId, operation) {
+    if (!opId) return true;
+    const { error } = await supabase
+        .from('processed_operations')
+        .insert({ op_id: String(opId).slice(0, 100), kid_id: kidId, operation });
+    if (!error) return true;
+    if (error.code === '23505') return false;
+    throw error;
+}
+
+async function releaseOperation(opId) {
+    if (!opId) return;
+    await supabase.from('processed_operations').delete().eq('op_id', String(opId).slice(0, 100));
+}
+
 /**
  * @route   POST /api/memorization/record
  * @desc    Submit a recording for verse recitation
@@ -262,8 +297,10 @@ router.post('/memorize', authenticateUser, async (req, res) => {
  * @access  Private
  */
 router.post('/review', authenticateUser, async (req, res) => {
+    let claimedOpId = null;
     try {
-        const { kid_id, verse_id, accuracy_score } = req.body;
+        const { kid_id, verse_id, accuracy_score, client_op_id, reviewed_at } = req.body;
+        const reviewedAt = resolveClientTime(reviewed_at);
 
         // Verify kid ownership
         const { data: kid } = await supabase
@@ -294,13 +331,29 @@ router.post('/review', authenticateUser, async (req, res) => {
             });
         }
 
+        // A retry of a review that was already applied must not award
+        // points or advance the schedule a second time.
+        if (!(await claimOperation(client_op_id, kid_id, 'review'))) {
+            return res.json({
+                success: true,
+                duplicate: true,
+                message: 'Review already recorded',
+                memorizedVerse,
+                pointsEarned: 0,
+                nextReview: memorizedVerse.next_review_date,
+                masteryLevel: memorizedVerse.mastery_level
+            });
+        }
+        claimedOpId = client_op_id || null;
+
         // Calculate next review using SM-2
         const quality = spacedRepetitionService.accuracyToQuality(accuracy_score);
         const schedule = spacedRepetitionService.calculateNextReview({
             quality,
             easeFactor: memorizedVerse.ease_factor,
             intervalDays: memorizedVerse.interval_days,
-            repetitionCount: memorizedVerse.repetition_count
+            repetitionCount: memorizedVerse.repetition_count,
+            now: reviewedAt
         });
 
         // Update memorized verse
@@ -311,7 +364,7 @@ router.post('/review', authenticateUser, async (req, res) => {
                 ease_factor: schedule.easeFactor,
                 interval_days: schedule.intervalDays,
                 repetition_count: schedule.repetitionCount,
-                last_review_date: new Date().toISOString(),
+                last_review_date: reviewedAt.toISOString(),
                 last_review_quality: quality,
                 mastery_level: schedule.masteryLevel
             })
@@ -351,6 +404,8 @@ router.post('/review', authenticateUser, async (req, res) => {
             masteryLevel: schedule.masteryLevel
         });
     } catch (error) {
+        // The review was not applied, so let a retry go through.
+        await releaseOperation(claimedOpId).catch(() => {});
         console.error('Review verse error:', error);
         res.status(500).json({
             success: false,

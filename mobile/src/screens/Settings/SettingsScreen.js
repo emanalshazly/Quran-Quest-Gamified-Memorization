@@ -23,7 +23,8 @@ const REMINDER_HOURS = [
 const SettingsScreen = ({ navigation }) => {
   const { logout, user } = useAuth();
   const { language, changeLanguage, isDarkMode, toggleDarkMode, selectedKid, updateKid,
-    remindersEnabled, reminderHour, setRemindersEnabled, setReminderHour } = useApp();
+    remindersEnabled, reminderHour, setRemindersEnabled, setReminderHour,
+    isOnline, pendingSyncCount, syncNow } = useApp();
 
   const toggleReminders = async (enabled) => {
     const ok = await setRemindersEnabled(enabled);
@@ -37,7 +38,10 @@ const SettingsScreen = ({ navigation }) => {
   const currentReciter = selectedKid?.preferred_reciter || 'minshawi';
 
   const confirmLogout = () => {
-    Alert.alert('تسجيل الخروج', 'هل تريد تسجيل الخروج؟', [
+    const message = pendingSyncCount > 0
+      ? `لديك ${pendingSyncCount} إنجاز لم يُرسل بعد وسيُفقد عند الخروج. اتصل بالإنترنت أولاً لإرساله. هل تريد الخروج الآن؟`
+      : 'هل تريد تسجيل الخروج؟';
+    Alert.alert('تسجيل الخروج', message, [
       { text: 'إلغاء', style: 'cancel' },
       { text: 'خروج', style: 'destructive', onPress: logout },
     ]);
@@ -88,6 +92,17 @@ const SettingsScreen = ({ navigation }) => {
               trackColor={{ true: COLORS.primary }}
             />
           }
+        />
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>المزامنة</Text>
+        <Row icon={isOnline ? '🟢' : '📴'} label="الحالة" value={isOnline ? 'متصل' : 'غير متصل'} />
+        <Row
+          icon="🔄"
+          label="بانتظار الإرسال"
+          value={pendingSyncCount > 0 ? `${pendingSyncCount} — أرسل الآن` : 'لا شيء'}
+          onPress={pendingSyncCount > 0 && isOnline ? syncNow : undefined}
         />
       </View>
 

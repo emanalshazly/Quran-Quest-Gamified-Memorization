@@ -1,4 +1,6 @@
-import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
+import React, { createContext, useState, useContext, useEffect, useCallback, useRef } from 'react';
+import { AppState } from 'react-native';
+import NetInfo from '@react-native-community/netinfo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { kidsAPI } from '../services/api';
 import { useAuth } from './AuthContext';
@@ -8,6 +10,7 @@ import {
   requestNotificationPermission,
 } from '../services/notifications';
 import { DEFAULT_REMINDER_HOUR } from '../utils/reminderSchedule';
+import { outbox } from '../services/offline';
 
 const AppContext = createContext({});
 
@@ -19,6 +22,11 @@ export const AppProvider = ({ children }) => {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [loading, setLoading] = useState(true);
   const [kidsLoaded, setKidsLoaded] = useState(false);
+  const [isOnline, setIsOnline] = useState(true);
+  const [pendingSyncCount, setPendingSyncCount] = useState(0);
+  const [lastSyncResult, setLastSyncResult] = useState(null);
+  const selectedKidIdRef = useRef(null);
+  selectedKidIdRef.current = selectedKid?.id || null;
   const [remindersEnabled, setRemindersEnabledState] = useState(false);
   const [reminderHour, setReminderHourState] = useState(DEFAULT_REMINDER_HOUR);
 
@@ -57,6 +65,48 @@ export const AppProvider = ({ children }) => {
     if (!kidsLoaded) return;
     syncReminders();
   }, [loading, authLoading, isAuthenticated, kidsLoaded, syncReminders]);
+
+  // ---- Offline sync -------------------------------------------------------
+
+  // Sends everything queued while offline. After a successful sync the kid
+  // data (points, level, streak) is reloaded, which also reschedules reminders.
+  const syncNow = useCallback(async () => {
+    const result = await outbox.flush();
+    if (result.synced > 0 || result.dropped > 0) {
+      setLastSyncResult({ ...result, at: new Date().toISOString() });
+      await loadKids(selectedKidIdRef.current);
+    }
+    return result;
+  }, []);
+
+  useEffect(() => {
+    outbox.pending().then((operations) => setPendingSyncCount(operations.length));
+    return outbox.subscribe(setPendingSyncCount);
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      setIsOnline(!!state.isConnected && state.isInternetReachable !== false);
+    });
+    return unsubscribe;
+  }, []);
+
+  // Sync when the connection comes back, when the user signs in, and when
+  // the app returns to the foreground.
+  useEffect(() => {
+    if (isOnline && isAuthenticated) {
+      syncNow();
+    }
+  }, [isOnline, isAuthenticated, syncNow]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active' && isOnline && isAuthenticated) {
+        syncNow();
+      }
+    });
+    return () => subscription.remove();
+  }, [isOnline, isAuthenticated, syncNow]);
 
   const loadAppSettings = async () => {
     try {
@@ -213,6 +263,10 @@ export const AppProvider = ({ children }) => {
     setRemindersEnabled,
     setReminderHour,
     syncReminders,
+    isOnline,
+    pendingSyncCount,
+    lastSyncResult,
+    syncNow,
     isArabic: language === 'ar',
   };
 

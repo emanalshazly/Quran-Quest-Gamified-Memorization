@@ -3,7 +3,8 @@
 ## ترتيب التشغيل
 
 1. `schemas/001_initial_schema.sql` — الجداول، الـ triggers، الدوال، وسياسات RLS.
-2. بيانات القرآن الكريم (114 سورة، 6236 آية) بإحدى الطريقتين:
+2. `schemas/003_offline_sync.sql` — جدول منع تكرار العمليات المرسلة بعد العمل دون اتصال.
+3. بيانات القرآن الكريم (114 سورة، 6236 آية) بإحدى الطريقتين:
    - **عبر الـ API (الأسهل):** `cd backend && npm run seed:quran` — يحتاج `SUPABASE_URL` و `SUPABASE_SERVICE_KEY` في `backend/.env`.
    - **عبر SQL:** تشغيل `seeds/002_quran_data.sql` (حوالي 1.9MB). لو رفضه محرر SQL في Supabase بسبب الحجم، استخدم `psql` أو الطريقة الأولى.
 

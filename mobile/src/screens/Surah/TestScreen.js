@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import AudioRecorderPlayer from 'react-native-audio-recorder-player';
 import { useApp } from '../../contexts/AppContext';
-import { memorizationAPI } from '../../services/api';
+import { submitTestResult } from '../../services/offline';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS, SHADOWS } from '../../constants/theme';
 
 /**
@@ -76,53 +76,30 @@ const TestScreen = ({ route, navigation }) => {
     setSubmitting(true);
 
     try {
-      // 1) Save the recording metadata
-      const recordRes = await memorizationAPI.recordRecitation({
+      // PLACEHOLDER scoring until TFLite is integrated:
+      // a recitation of reasonable length gets a provisional passing score.
+      const minExpectedSecs = Math.max(2, Math.floor(verse.text_ar.length / 25));
+      const provisionalScore = recordSecs >= minExpectedSecs ? 85 : 55;
+
+      // Sent to the server, or queued for later if there is no connection
+      const outcome = await submitTestResult({
         kid_id: selectedKid.id,
         verse_id: verse.id,
         audio_url: audioPathRef.current || 'local://recording',
         duration_seconds: recordSecs,
+        score: provisionalScore,
+        already_memorized: isAlreadyMemorized,
       });
 
-      if (!recordRes.success) throw new Error('فشل حفظ التسجيل');
-
-      // 2) PLACEHOLDER scoring until TFLite is integrated:
-      //    a recitation of reasonable length gets a provisional passing score.
-      const minExpectedSecs = Math.max(2, Math.floor(verse.text_ar.length / 25));
-      const provisionalScore = recordSecs >= minExpectedSecs ? 85 : 55;
-
-      const analyzeRes = await memorizationAPI.analyzeRecording({
-        recording_id: recordRes.recording.id,
-        accuracy_score: provisionalScore,
-        tajweed_score: provisionalScore,
-        pronunciation_score: provisionalScore,
-        errors_detected: null,
-      });
-
-      let pointsEarned = 0;
-      let badges = [];
-
-      // 3) If passed and not yet memorized → mark memorized (points, streak, badges)
-      if (analyzeRes.success && analyzeRes.isPassed && !isAlreadyMemorized) {
-        const memorizeRes = await memorizationAPI.markAsMemorized({
-          kid_id: selectedKid.id,
-          verse_id: verse.id,
-          recording_id: recordRes.recording.id,
-          accuracy_score: provisionalScore,
-        });
-        if (memorizeRes.success) {
-          pointsEarned = memorizeRes.pointsEarned || 0;
-          syncReminders();
-          badges = memorizeRes.badgesEarned || [];
-        }
-      }
+      if (outcome.memorized) syncReminders();
 
       setResult({
         score: provisionalScore,
-        isPassed: analyzeRes.isPassed,
-        feedback: analyzeRes.recording?.feedback_ar,
-        pointsEarned,
-        badges,
+        isPassed: outcome.isPassed,
+        feedback: outcome.feedback,
+        pointsEarned: outcome.pointsEarned,
+        badges: outcome.badges,
+        queued: outcome.queued,
       });
     } catch (error) {
       console.error('Submit recording error:', error);
@@ -213,6 +190,12 @@ const TestScreen = ({ route, navigation }) => {
           <Text style={styles.resultScore}>{result.score}/100</Text>
           <Text style={styles.resultLabel}>تقييم تجريبي</Text>
           {result.feedback ? <Text style={styles.resultFeedback}>{result.feedback}</Text> : null}
+
+          {result.queued && (
+            <Text style={styles.queuedNote}>
+              📴 لا يوجد اتصال — حُفظت نتيجتك وستُرسل وتُحتسب نقاطها تلقائياً عند عودة الإنترنت
+            </Text>
+          )}
 
           {result.pointsEarned > 0 && (
             <Text style={styles.resultPoints}>+{result.pointsEarned} نقطة 🎉</Text>
@@ -372,6 +355,13 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     textAlign: 'center',
     marginTop: SPACING.sm,
+  },
+  queuedNote: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    marginTop: SPACING.sm,
+    lineHeight: 20,
   },
   resultPoints: {
     fontSize: FONT_SIZES.xl,

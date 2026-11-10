@@ -11,6 +11,7 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { useApp } from '../../contexts/AppContext';
 import { memorizationAPI } from '../../services/api';
+import { submitReview as sendReview, pendingVerseIds } from '../../services/offline';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS, SHADOWS } from '../../constants/theme';
 import { MASTERY_LEVELS } from '../../constants';
 
@@ -33,11 +34,15 @@ const ReviewScreen = () => {
 
   const loadData = async () => {
     try {
-      const [dueRes, statsRes] = await Promise.all([
+      const [dueRes, statsRes, queuedVerseIds] = await Promise.all([
         memorizationAPI.getDueVerses(selectedKid.id),
         memorizationAPI.getStats(selectedKid.id),
+        pendingVerseIds(selectedKid.id, 'review'),
       ]);
-      if (dueRes.success) setDueVerses(dueRes.verses || []);
+      // Verses already reviewed offline stay hidden until that review is synced
+      if (dueRes.success) {
+        setDueVerses((dueRes.verses || []).filter(v => !queuedVerseIds.includes(v.verse_id)));
+      }
       if (statsRes.success) setStats(statsRes.stats);
     } catch (error) {
       console.error('Error loading review data:', error);
@@ -52,7 +57,7 @@ const ReviewScreen = () => {
     setReviewingId(item.id);
 
     try {
-      const res = await memorizationAPI.submitReview({
+      const res = await sendReview({
         kid_id: selectedKid.id,
         verse_id: item.verse_id,
         accuracy_score: scoreMap[quality],
@@ -60,6 +65,10 @@ const ReviewScreen = () => {
 
       if (res.success) {
         setDueVerses(prev => prev.filter(v => v.id !== item.id));
+        if (res.queued) {
+          Alert.alert('حُفظت مراجعتك 📴', 'لا يوجد اتصال الآن — ستُرسل وتُحتسب نقاطها تلقائياً عند عودة الإنترنت');
+          return;
+        }
         syncReminders();
         if (quality !== 'forgot') {
           Alert.alert('أحسنت! ⭐', `+${res.pointsEarned} نقطة — المراجعة القادمة مجدولة تلقائياً`);
