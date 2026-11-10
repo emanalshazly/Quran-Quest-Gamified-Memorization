@@ -2,8 +2,6 @@
 
 <div align="center">
 
-![Quran Quest Logo](assets/logo.png)
-
 **تطبيق تفاعلي لحفظ القرآن الكريم للأطفال مع نظام Gamification متقدم**
 
 [![React Native](https://img.shields.io/badge/React%20Native-0.73-blue.svg)](https://reactnative.dev/)
@@ -23,11 +21,19 @@
 
 - ✅ **Gamification مكثف**: نظام نقاط، شارات، مستويات، ومعارك
 - ✅ **SM-2 Algorithm**: للمراجعة المتباعدة الذكية
-- ✅ **AI Voice Analysis**: تقييم التلاوة بدقة باستخدام TensorFlow Lite
-- ✅ **Spaced Repetition**: جدولة المراجعات بناءً على مستوى الإتقان
-- ✅ **Parent Dashboard**: لوحة تحكم متقدمة للوالدين لمتابعة التقدم
-- ✅ **Offline Support**: العمل بدون إنترنت
-- ✅ **Multi-language**: دعم العربية والإنجليزية
+- ✅ **Parent Dashboard**: لوحة للوالدين لمتابعة التقدم
+- 🚧 **AI Voice Analysis** (قيد التطوير): التقييم الحالي تجريبي — دمج TensorFlow Lite للتقييم المحلي على خارطة الطريق
+- 🚧 **Offline Support** (قيد التطوير)
+- 🚧 **Multi-language**: الواجهة الحالية عربية، ودعم الإنجليزية جزئي
+
+### ⚠️ حالة المشروع
+
+هذا المشروع **قيد التطوير النشط** وليس جاهزاً للإنتاج بعد. ما يعمل الآن:
+- الـ Backend API (حوالي 40 endpoint) مع مصادقة Supabase وخوارزمية SM-2
+- مخطط قاعدة البيانات الكامل مع RLS وTriggers
+- تطبيق الموبايل: الدخول/التسجيل، ملفات الأطفال، خريطة المغامرة، وضع الحفظ، وضع الاختبار (بتقييم تجريبي)، المراجعة اليومية، لوحة الأبطال، الشارات، التحديات، لوحة الوالدين، الإعدادات
+
+ما هو ناقص (انظر Roadmap أدناه): مجلدات iOS/Android الأصلية، نصوص الآيات الكاملة من مصدر موثق، روابط التلاوات الصوتية، تقييم التلاوة بالذكاء الاصطناعي، الإشعارات، العمل دون اتصال، الاشتراكات داخل التطبيق، والاختبارات الآلية.
 
 ---
 
@@ -37,8 +43,8 @@
 - **React Native** 0.73.2
 - **React Navigation** للتنقل بين الشاشات
 - **Context API** لإدارة الحالة
-- **TensorFlow Lite** لتحليل الصوت المحلي
 - **react-native-audio-recorder-player** للتسجيل الصوتي
+- **TensorFlow Lite** لتحليل الصوت المحلي (مخطط — غير مدمج بعد)
 
 ### Backend (API)
 - **Node.js** 18+
@@ -50,7 +56,6 @@
 ### Database
 - **PostgreSQL** على Supabase
 - **Row Level Security (RLS)**
-- **Real-time subscriptions**
 - **Automated triggers & functions**
 
 ---
@@ -59,8 +64,8 @@
 
 ### 1️⃣ نظام المصادقة
 - حساب واحد للوالدين
-- حتى **5 ملفات للأطفال**
-- كل طفل له Avatar وUsername ومستوى
+- ملفات أطفال حسب الباقة: **1 مجاني / 3 احترافي / 5 عائلي**
+- كل طفل له Avatar واسم ومستوى
 
 ### 2️⃣ خريطة المغامرة (Quest Map)
 ```
@@ -81,20 +86,17 @@
 
 ### 4️⃣ وضع الاختبار (Test Mode)
 - تسجيل صوتي للتلاوة
-- AI يُحلل:
-  - **Accuracy Score** (دقة الحفظ)
-  - **Tajweed Score** (التجويد)
-  - **Pronunciation Score** (النطق)
+- تقييم بثلاث درجات: **الدقة / التجويد / النطق**
 - Feedback فوري بالعربية والإنجليزية
+- ⚠️ التقييم الحالي **تجريبي (placeholder)** — التقييم الذكي المحلي بـ TensorFlow Lite قيد التطوير
 
 ### 5️⃣ نظام التكرار المُتباعد (SM-2 Algorithm)
 ```javascript
-// جدولة المراجعات الذكية
-بعد الحفظ → مراجعة بعد ساعة
-نجحت؟     → مراجعة بعد يوم
-نجحت؟     → مراجعة بعد 3 أيام
-نجحت؟     → مراجعة بعد أسبوع
-نجحت؟     → مراجعة بعد شهر
+// جدولة المراجعات الذكية (خوارزمية SM-2 الكلاسيكية)
+المراجعة الأولى الناجحة  → بعد يوم واحد
+المراجعة الثانية الناجحة → بعد 6 أيام
+بعد ذلك                 → الفترة السابقة × معامل السهولة (Ease Factor)
+فشل التذكر (Quality < 3) → تعود الآية مستحقة فوراً من جديد
 ```
 
 ### 6️⃣ نظام Gamification
@@ -121,9 +123,8 @@
 - ⚔️ **بطل المعارك**: الفوز بـ 10 معارك
 
 #### 📊 Leaderboard
-- **ترتيب عالمي**: أفضل 10 أطفال عالمياً
 - **ترتيب عائلي**: أفضل 10 داخل العائلة
-- تحديث Real-time
+- **ترتيب عالمي**: أفضل 10 عالمياً — بأسماء مجهّلة حفاظاً على خصوصية الأطفال (COPPA)
 
 ### 7️⃣ التحديات اليومية
 ```yaml
@@ -214,9 +215,8 @@ Quran-Quest-Gamified-Memorization/
 │       └── 001_initial_schema.sql  # Complete PostgreSQL schema
 │
 ├── docs/                       # Documentation
-│   ├── API.md                 # API documentation
 │   ├── SETUP.md               # Setup guide
-│   └── ARCHITECTURE.md        # Architecture overview
+│   └── PROJECT_SUMMARY.md     # Project summary
 │
 └── README.md                   # This file
 ```
@@ -592,12 +592,12 @@ Accent:    #0D47A1  // أزرق عميق
 
 ### Security Measures
 ```javascript
-✓ JWT Authentication
+✓ مصادقة Supabase Auth (JWT) — كلمات المرور تُدار بالكامل عبر Supabase
 ✓ Row Level Security (RLS) في Supabase
 ✓ Rate Limiting على API
-✓ Input Validation
-✓ HTTPS فقط في الإنتاج
-✓ تشفير كلمات المرور (bcrypt)
+✓ تجهيل أسماء الأطفال في اللوحة العالمية
+⚠️ Input Validation ما زال أساسياً — يحتاج توسعة قبل الإنتاج
+⚠️ درجات التقييم تُرسل حالياً من العميل (تُقيّد 0-100 في الخادم) حتى يُدمج التقييم المحلي
 ```
 
 ---
@@ -663,14 +663,6 @@ cd android
 
 ---
 
-## 📧 التواصل
-
-- **البريد الإلكتروني**: support@quranquest.app
-- **الموقع**: https://quranquest.app
-- **تويتر**: [@QuranQuestApp](https://twitter.com/QuranQuestApp)
-
----
-
 ## 🙏 شكر وتقدير
 
 - **قراء القرآن الكريم** لتسجيلاتهم المباركة
@@ -681,11 +673,20 @@ cd android
 
 ## 🗺️ Roadmap المستقبل
 
-- [ ] إضافة Quran Audio Library الكاملة
-- [ ] تطبيق TensorFlow Lite model للتعرف على الصوت
+### الأساسيات المتبقية قبل الإطلاق
+- [ ] توليد مجلدات iOS/Android الأصلية وربط المكتبات (fonts, permissions)
+- [ ] تحميل نص الآيات الكامل من مصدر موثق (مثل Tanzil أو QUL) إلى جدول verses
+- [ ] روابط التلاوات الصوتية للقراء الثلاثة
+- [ ] دمج TensorFlow Lite model للتقييم المحلي للتلاوة
+- [ ] Push Notifications لتذكيرات المراجعة
+- [ ] العمل دون اتصال مع المزامنة التلقائية
+- [ ] الاشتراكات داخل التطبيق (IAP)
+- [ ] تدفق موافقة الوالدين (COPPA) والتقارير الأسبوعية بالبريد
+- [ ] اختبارات آلية (Backend + Mobile)
+
+### ميزات مستقبلية
 - [ ] دعم Apple Watch و Wear OS
 - [ ] ميزة Group Challenges (تحديات جماعية)
-- [ ] ميزة Live Competitions (منافسات مباشرة)
 - [ ] دعم لغات إضافية (فرنسي، إندونيسي، أردو)
 - [ ] نسخة Web للوالدين
 

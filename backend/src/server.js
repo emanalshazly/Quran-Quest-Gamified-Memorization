@@ -56,21 +56,21 @@ app.use('/api/battle', battleRoutes);
 app.use('/api/parent', parentRoutes);
 app.use('/api/notifications', notificationRoutes);
 
+// 404 handler (must come before the error handler)
+app.use((req, res) => {
+    res.status(404).json({
+        success: false,
+        message: 'Route not found'
+    });
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
     console.error(err.stack);
     res.status(err.status || 500).json({
         success: false,
         message: err.message || 'Internal Server Error',
-        error: process.env.NODE_ENV === 'development' ? err : {}
-    });
-});
-
-// 404 handler
-app.use((req, res) => {
-    res.status(404).json({
-        success: false,
-        message: 'Route not found'
+        error: process.env.NODE_ENV === 'development' ? { message: err.message } : {}
     });
 });
 

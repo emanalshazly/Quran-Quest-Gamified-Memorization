@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { supabase } = require('../config/supabase');
+const { supabase, supabaseAuth } = require('../config/supabase');
 const { authenticateUser } = require('../middlewares/auth.middleware');
 
 /**
@@ -20,7 +20,7 @@ router.post('/register', async (req, res) => {
         }
 
         // Register with Supabase Auth
-        const { data, error } = await supabase.auth.signUp({
+        const { data, error } = await supabaseAuth.auth.signUp({
             email,
             password
         });
@@ -30,6 +30,14 @@ router.post('/register', async (req, res) => {
                 success: false,
                 message: error.message
             });
+        }
+
+        // Ensure a public.users row exists (the on_auth_user_created DB
+        // trigger also does this; the upsert makes it safe either way).
+        if (data.user) {
+            await supabase
+                .from('users')
+                .upsert({ id: data.user.id, email: data.user.email }, { onConflict: 'id', ignoreDuplicates: true });
         }
 
         res.status(201).json({
@@ -63,7 +71,7 @@ router.post('/login', async (req, res) => {
         }
 
         // Login with Supabase Auth
-        const { data, error } = await supabase.auth.signInWithPassword({
+        const { data, error } = await supabaseAuth.auth.signInWithPassword({
             email,
             password
         });
@@ -97,7 +105,7 @@ router.post('/login', async (req, res) => {
  */
 router.post('/logout', authenticateUser, async (req, res) => {
     try {
-        const { error } = await supabase.auth.signOut();
+        const { error } = await supabaseAuth.auth.signOut();
 
         if (error) {
             return res.status(400).json({
@@ -168,7 +176,7 @@ router.post('/reset-password', async (req, res) => {
             });
         }
 
-        const { error } = await supabase.auth.resetPasswordForEmail(email);
+        const { error } = await supabaseAuth.auth.resetPasswordForEmail(email);
 
         if (error) {
             return res.status(400).json({

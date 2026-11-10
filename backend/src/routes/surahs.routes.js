@@ -47,6 +47,36 @@ router.get('/', authenticateUser, async (req, res) => {
 });
 
 /**
+ * @route   GET /api/surahs/juz/:juzNumber
+ * @desc    Get all surahs in a specific Juz
+ * @access  Private
+ * NOTE: must be declared BEFORE /:surahId or Express matches "juz" as a surahId.
+ */
+router.get('/juz/:juzNumber', authenticateUser, async (req, res) => {
+    try {
+        const { data: surahs, error } = await supabase
+            .from('surahs')
+            .select('*')
+            .eq('juz_number', req.params.juzNumber)
+            .order('surah_number', { ascending: true });
+
+        if (error) throw error;
+
+        res.json({
+            success: true,
+            juzNumber: parseInt(req.params.juzNumber),
+            surahs
+        });
+    } catch (error) {
+        console.error('Get Juz surahs error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch Juz surahs'
+        });
+    }
+});
+
+/**
  * @route   GET /api/surahs/:surahId
  * @desc    Get single surah with all verses
  * @access  Private
@@ -153,35 +183,6 @@ router.get('/:surahId/verses/:verseNumber', authenticateUser, async (req, res) =
         res.status(500).json({
             success: false,
             message: 'Failed to fetch verse'
-        });
-    }
-});
-
-/**
- * @route   GET /api/surahs/juz/:juzNumber
- * @desc    Get all surahs in a specific Juz
- * @access  Private
- */
-router.get('/juz/:juzNumber', authenticateUser, async (req, res) => {
-    try {
-        const { data: surahs, error } = await supabase
-            .from('surahs')
-            .select('*')
-            .eq('juz_number', req.params.juzNumber)
-            .order('surah_number', { ascending: true });
-
-        if (error) throw error;
-
-        res.json({
-            success: true,
-            juzNumber: parseInt(req.params.juzNumber),
-            surahs
-        });
-    } catch (error) {
-        console.error('Get Juz surahs error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to fetch Juz surahs'
         });
     }
 });

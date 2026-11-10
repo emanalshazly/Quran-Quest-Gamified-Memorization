@@ -1,10 +1,12 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { kidsAPI } from '../services/api';
+import { useAuth } from './AuthContext';
 
 const AppContext = createContext({});
 
 export const AppProvider = ({ children }) => {
+  const { isAuthenticated } = useAuth();
   const [selectedKid, setSelectedKid] = useState(null);
   const [kids, setKids] = useState([]);
   const [language, setLanguage] = useState('ar');
@@ -15,20 +17,28 @@ export const AppProvider = ({ children }) => {
     loadAppSettings();
   }, []);
 
+  // (Re)load kids whenever the user becomes authenticated — including
+  // first-time users with no previously selected kid.
+  useEffect(() => {
+    if (isAuthenticated) {
+      AsyncStorage.getItem('app.selectedKidId')
+        .then(savedKidId => loadKids(savedKidId))
+        .catch(() => loadKids());
+    } else {
+      setKids([]);
+      setSelectedKid(null);
+    }
+  }, [isAuthenticated]);
+
   const loadAppSettings = async () => {
     try {
-      const [savedLanguage, savedTheme, savedKidId] = await Promise.all([
+      const [savedLanguage, savedTheme] = await Promise.all([
         AsyncStorage.getItem('app.language'),
         AsyncStorage.getItem('app.darkMode'),
-        AsyncStorage.getItem('app.selectedKidId'),
       ]);
 
       if (savedLanguage) setLanguage(savedLanguage);
       if (savedTheme) setIsDarkMode(savedTheme === 'true');
-      if (savedKidId) {
-        // Load selected kid from saved ID
-        await loadKids(savedKidId);
-      }
     } catch (error) {
       console.error('Error loading app settings:', error);
     } finally {

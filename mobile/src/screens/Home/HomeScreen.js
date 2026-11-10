@@ -1,42 +1,54 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  FlatList,
   RefreshControl,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { useApp } from '../../contexts/AppContext';
 import { surahsAPI, gamificationAPI, memorizationAPI } from '../../services/api';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS, SHADOWS } from '../../constants/theme';
+import { JUZ_NAMES } from '../../constants';
 
 const HomeScreen = ({ navigation }) => {
   const { selectedKid, isArabic } = useApp();
   const [surahs, setSurahs] = useState([]);
+  const [subscriptionTier, setSubscriptionTier] = useState('free');
+  const [progressBySurah, setProgressBySurah] = useState({});
   const [stats, setStats] = useState(null);
   const [dailyChallenge, setDailyChallenge] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    if (selectedKid) {
-      loadData();
-    }
-  }, [selectedKid]);
+  useFocusEffect(
+    useCallback(() => {
+      if (selectedKid) {
+        loadData();
+      } else {
+        setLoading(false);
+      }
+    }, [selectedKid])
+  );
 
   const loadData = async () => {
     try {
-      const [surahsRes, statsRes, challengeRes] = await Promise.all([
+      const [surahsRes, statsRes, challengeRes, progressRes] = await Promise.all([
         surahsAPI.getAll(),
         gamificationAPI.getStats(selectedKid.id),
         gamificationAPI.getDailyChallenge(selectedKid.id),
+        memorizationAPI.getProgressMap(selectedKid.id),
       ]);
 
-      if (surahsRes.success) setSurahs(surahsRes.surahs);
+      if (surahsRes.success) {
+        setSurahs(surahsRes.surahs);
+        setSubscriptionTier(surahsRes.subscriptionTier || 'free');
+      }
       if (statsRes.success) setStats(statsRes.stats);
       if (challengeRes.success) setDailyChallenge(challengeRes.challenge);
+      if (progressRes.success) setProgressBySurah(progressRes.progressBySurah || {});
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -50,11 +62,53 @@ const HomeScreen = ({ navigation }) => {
     loadData();
   };
 
+  // ---- Quest Map helpers --------------------------------------------------
+
+  const getSurahState = (surah, currentSurahId) => {
+    const memorizedCount = progressBySurah[surah.id] || 0;
+    if (memorizedCount >= surah.verses_count) return 'memorized';
+    if (!surah.is_free && subscriptionTier === 'free') return 'locked';
+    if (surah.id === currentSurahId) return 'current';
+    return 'available';
+  };
+
+  // The "current" surah = first unlocked, not-yet-completed surah with any
+  // progress; otherwise the first unlocked incomplete surah.
+  const findCurrentSurahId = (list) => {
+    const unlocked = list.filter(s => s.is_free || subscriptionTier !== 'free');
+    const inProgress = unlocked.find(
+      s => (progressBySurah[s.id] || 0) > 0 && (progressBySurah[s.id] || 0) < s.verses_count
+    );
+    if (inProgress) return inProgress.id;
+    const next = unlocked.find(s => (progressBySurah[s.id] || 0) < s.verses_count);
+    return next?.id;
+  };
+
+  const groupByJuz = (list) => {
+    const groups = {};
+    list.forEach(s => {
+      const juz = s.juz_number || 0;
+      if (!groups[juz]) groups[juz] = [];
+      groups[juz].push(s);
+    });
+    return Object.keys(groups)
+      .sort((a, b) => Number(b) - Number(a)) // Juz 30 (short surahs) first
+      .map(juz => ({ juz: Number(juz), surahs: groups[juz] }));
+  };
+
+  // ---- Renderers ----------------------------------------------------------
+
   const renderKidCard = () => (
-    <View style={styles.kidCard}>
-      <View style={styles.kidInfo}>
-        <Text style={styles.kidName}>{selectedKid?.name}</Text>
-        <Text style={styles.kidLevel}>المستوى {selectedKid?.level || 1}</Text>
+    <TouchableOpacity style={styles.kidCard} onPress={() => navigation.navigate('KidProfiles')}>
+      <View style={styles.kidHeader}>
+        <Text style={styles.kidAvatar}>
+          {selectedKid?.avatar?.length <= 4 ? selectedKid.avatar : '🧒'}
+        </Text>
+        <View style={styles.kidInfo}>
+          <Text style={styles.kidName}>{selectedKid?.name}</Text>
+          <Text style={styles.kidLevel}>المستوى {stats?.level || selectedKid?.level || 1}</Text>
+        </View>
+        <Text style={styles.switchKid}>تبديل ⇄</Text>
       </View>
 
       <View style={styles.statsRow}>
@@ -62,50 +116,50 @@ const HomeScreen = ({ navigation }) => {
           <Text style={styles.statValue}>{stats?.totalPoints || 0}</Text>
           <Text style={styles.statLabel}>نقطة</Text>
         </View>
-
         <View style={styles.statItem}>
-          <Text style={styles.statValue}>{stats?.streakCount || 0}</Text>
+          <Text style={styles.statValue}>🔥 {stats?.streakCount || 0}</Text>
           <Text style={styles.statLabel}>يوم متتالي</Text>
         </View>
-
         <View style={styles.statItem}>
           <Text style={styles.statValue}>{stats?.versesMemorized || 0}</Text>
           <Text style={styles.statLabel}>آية محفوظة</Text>
         </View>
       </View>
 
-      {stats?.badgeCount > 0 && (
+      {stats?.badges?.length > 0 && (
         <TouchableOpacity
-          style={styles.badgesButton}
+          style={styles.badgesRow}
           onPress={() => navigation.navigate('Badges')}
         >
+          {stats.badges.slice(0, 3).map((badge) => (
+            <Text key={badge.id} style={styles.badgeIcon}>{badge.badge_icon}</Text>
+          ))}
           <Text style={styles.badgesText}>
-            🏆 {stats.badgeCount} شارة
+            {stats.badges.length} شارة — اعرض الكل ›
           </Text>
         </TouchableOpacity>
       )}
-    </View>
+    </TouchableOpacity>
   );
 
   const renderDailyChallenge = () => {
     if (!dailyChallenge) return null;
-
-    const progress = (dailyChallenge.current_progress / dailyChallenge.target_value) * 100;
+    const progress = Math.min(
+      100,
+      (dailyChallenge.current_progress / dailyChallenge.target_value) * 100
+    );
 
     return (
-      <TouchableOpacity
-        style={styles.challengeCard}
-        onPress={() => navigation.navigate('DailyChallenge')}
-      >
+      <View style={styles.challengeCard}>
         <View style={styles.challengeHeader}>
-          <Text style={styles.challengeTitle}>التحدي اليومي</Text>
+          <Text style={styles.challengeTitle}>⚡ التحدي اليومي</Text>
           <Text style={styles.challengePoints}>+{dailyChallenge.reward_points} نقطة</Text>
         </View>
-
         <Text style={styles.challengeDescription}>
-          {isArabic ? dailyChallenge.challenge_description_ar : dailyChallenge.challenge_description_en}
+          {isArabic
+            ? dailyChallenge.challenge_description_ar
+            : dailyChallenge.challenge_description_en}
         </Text>
-
         <View style={styles.progressContainer}>
           <View style={styles.progressBar}>
             <View style={[styles.progressFill, { width: `${progress}%` }]} />
@@ -114,41 +168,83 @@ const HomeScreen = ({ navigation }) => {
             {dailyChallenge.current_progress} / {dailyChallenge.target_value}
           </Text>
         </View>
-      </TouchableOpacity>
+      </View>
     );
   };
 
-  const renderSurahItem = ({ item }) => {
-    const isLocked = !item.is_free && selectedKid?.subscription_tier === 'free';
+  const renderSurahNode = (surah, state) => {
+    const memorizedCount = progressBySurah[surah.id] || 0;
+    const isLocked = state === 'locked';
 
     return (
       <TouchableOpacity
-        style={[styles.surahCard, isLocked && styles.surahCardLocked]}
-        onPress={() => !isLocked && navigation.navigate('Surah', { surah: item })}
+        key={surah.id}
+        style={[
+          styles.surahNode,
+          state === 'memorized' && styles.surahNodeMemorized,
+          state === 'current' && styles.surahNodeCurrent,
+          isLocked && styles.surahNodeLocked,
+        ]}
+        onPress={() => !isLocked && navigation.navigate('Surah', { surah })}
         disabled={isLocked}
       >
-        <View style={styles.surahNumber}>
-          <Text style={styles.surahNumberText}>{item.surah_number}</Text>
-        </View>
-
-        <View style={styles.surahInfo}>
-          <Text style={styles.surahNameAr}>{item.name_ar}</Text>
-          <Text style={styles.surahNameEn}>{item.name_en}</Text>
-          <Text style={styles.surahMeta}>
-            {item.verses_count} آية • {item.revelation_type === 'makki' ? 'مكية' : 'مدنية'}
+        <View
+          style={[
+            styles.surahCircle,
+            state === 'memorized' && styles.circleMemorized,
+            state === 'current' && styles.circleCurrent,
+            isLocked && styles.circleLocked,
+          ]}
+        >
+          <Text style={styles.surahCircleText}>
+            {state === 'memorized' ? '✓' : isLocked ? '🔒' : surah.surah_number}
           </Text>
         </View>
-
-        {isLocked ? (
-          <View style={styles.lockIcon}>
-            <Text style={styles.lockIconText}>🔒</Text>
-          </View>
-        ) : (
-          <Text style={styles.arrow}>›</Text>
-        )}
+        <View style={styles.surahNodeInfo}>
+          <Text style={[styles.surahNodeName, isLocked && styles.textLocked]}>
+            {isArabic ? surah.name_ar : surah.name_en}
+          </Text>
+          <Text style={styles.surahNodeMeta}>
+            {memorizedCount}/{surah.verses_count} آية
+            {state === 'current' ? '  ⭐ استمر هنا' : ''}
+          </Text>
+        </View>
       </TouchableOpacity>
     );
   };
+
+  const renderQuestMap = () => {
+    const currentSurahId = findCurrentSurahId(surahs);
+    const worlds = groupByJuz(surahs);
+
+    return (
+      <View style={styles.surahsSection}>
+        <Text style={styles.sectionTitle}>🗺️ خريطة المغامرة</Text>
+        <Text style={styles.sectionSubtitle}>كل جزء عالم، وكل سورة مرحلة</Text>
+
+        {worlds.map(({ juz, surahs: juzSurahs }) => (
+          <View key={juz} style={styles.worldCard}>
+            <Text style={styles.worldTitle}>
+              🌍 {JUZ_NAMES[juz] || `الجزء ${juz}`}
+            </Text>
+            {juzSurahs.map(surah =>
+              renderSurahNode(surah, getSurahState(surah, currentSurahId))
+            )}
+          </View>
+        ))}
+
+        {subscriptionTier === 'free' && (
+          <View style={styles.upgradeCard}>
+            <Text style={styles.upgradeText}>
+              🔓 اشترك في الباقة الاحترافية لفتح جميع السور الثلاثين جزءاً
+            </Text>
+          </View>
+        )}
+      </View>
+    );
+  };
+
+  // ---- Screen states ------------------------------------------------------
 
   if (loading) {
     return (
@@ -161,12 +257,12 @@ const HomeScreen = ({ navigation }) => {
   if (!selectedKid) {
     return (
       <View style={styles.emptyContainer}>
-        <Text style={styles.emptyText}>الرجاء اختيار ملف طفل</Text>
+        <Text style={styles.emptyText}>الرجاء اختيار ملف طفل للبدء 🌟</Text>
         <TouchableOpacity
           style={styles.addKidButton}
-          onPress={() => navigation.navigate('AddKid')}
+          onPress={() => navigation.navigate('KidProfiles')}
         >
-          <Text style={styles.addKidButtonText}>إضافة طفل</Text>
+          <Text style={styles.addKidButtonText}>ملفات الأطفال</Text>
         </TouchableOpacity>
       </View>
     );
@@ -176,25 +272,11 @@ const HomeScreen = ({ navigation }) => {
     <View style={styles.container}>
       <ScrollView
         style={styles.scrollView}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         {renderKidCard()}
         {renderDailyChallenge()}
-
-        <View style={styles.surahsSection}>
-          <Text style={styles.sectionTitle}>خريطة المغامرة</Text>
-          <Text style={styles.sectionSubtitle}>اختر سورة لبدء الحفظ</Text>
-
-          <FlatList
-            data={surahs}
-            renderItem={renderSurahItem}
-            keyExtractor={(item) => item.id.toString()}
-            scrollEnabled={false}
-            contentContainerStyle={styles.surahsList}
-          />
-        </View>
+        {renderQuestMap()}
       </ScrollView>
     </View>
   );
@@ -246,8 +328,17 @@ const styles = StyleSheet.create({
     borderRadius: BORDER_RADIUS.lg,
     ...SHADOWS.medium,
   },
-  kidInfo: {
+  kidHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: SPACING.md,
+  },
+  kidAvatar: {
+    fontSize: 40,
+    marginRight: SPACING.md,
+  },
+  kidInfo: {
+    flex: 1,
   },
   kidName: {
     fontSize: FONT_SIZES.xxl,
@@ -257,6 +348,11 @@ const styles = StyleSheet.create({
   kidLevel: {
     fontSize: FONT_SIZES.md,
     color: COLORS.secondary,
+  },
+  switchKid: {
+    color: COLORS.card,
+    fontSize: FONT_SIZES.sm,
+    opacity: 0.8,
   },
   statsRow: {
     flexDirection: 'row',
@@ -276,12 +372,18 @@ const styles = StyleSheet.create({
     color: COLORS.card,
     opacity: 0.8,
   },
-  badgesButton: {
+  badgesRow: {
     marginTop: SPACING.md,
     backgroundColor: COLORS.secondary,
     padding: SPACING.sm,
     borderRadius: BORDER_RADIUS.md,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.sm,
+  },
+  badgeIcon: {
+    fontSize: FONT_SIZES.lg,
   },
   badgesText: {
     color: COLORS.text,
@@ -290,7 +392,8 @@ const styles = StyleSheet.create({
   },
   challengeCard: {
     backgroundColor: COLORS.card,
-    margin: SPACING.md,
+    marginHorizontal: SPACING.md,
+    marginBottom: SPACING.md,
     padding: SPACING.lg,
     borderRadius: BORDER_RADIUS.lg,
     ...SHADOWS.small,
@@ -308,7 +411,7 @@ const styles = StyleSheet.create({
   },
   challengePoints: {
     fontSize: FONT_SIZES.md,
-    color: COLORS.secondary,
+    color: COLORS.secondaryDark,
     fontWeight: 'bold',
   },
   challengeDescription: {
@@ -350,62 +453,85 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     marginBottom: SPACING.md,
   },
-  surahsList: {
-    paddingBottom: SPACING.xl,
-  },
-  surahCard: {
+  worldCard: {
     backgroundColor: COLORS.card,
-    flexDirection: 'row',
-    alignItems: 'center',
+    borderRadius: BORDER_RADIUS.lg,
     padding: SPACING.md,
-    marginBottom: SPACING.sm,
-    borderRadius: BORDER_RADIUS.md,
+    marginBottom: SPACING.md,
     ...SHADOWS.small,
   },
-  surahCardLocked: {
-    opacity: 0.5,
+  worldTitle: {
+    fontSize: FONT_SIZES.lg,
+    fontWeight: 'bold',
+    color: COLORS.accent,
+    marginBottom: SPACING.sm,
   },
-  surahNumber: {
-    width: 40,
-    height: 40,
-    borderRadius: BORDER_RADIUS.round,
+  surahNode: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: SPACING.sm,
+    borderRadius: BORDER_RADIUS.md,
+  },
+  surahNodeMemorized: {},
+  surahNodeCurrent: {
+    backgroundColor: 'rgba(255, 215, 0, 0.12)',
+    borderWidth: 2,
+    borderColor: COLORS.secondary,
+    paddingHorizontal: SPACING.sm,
+    ...SHADOWS.small,
+  },
+  surahNodeLocked: {
+    opacity: 0.45,
+  },
+  surahCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: COLORS.primary,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: SPACING.md,
   },
-  surahNumberText: {
+  circleMemorized: {
+    backgroundColor: COLORS.gold,
+  },
+  circleCurrent: {
+    backgroundColor: COLORS.secondaryDark,
+  },
+  circleLocked: {
+    backgroundColor: COLORS.border,
+  },
+  surahCircleText: {
     color: COLORS.card,
-    fontSize: FONT_SIZES.md,
+    fontSize: FONT_SIZES.lg,
     fontWeight: 'bold',
   },
-  surahInfo: {
+  surahNodeInfo: {
     flex: 1,
   },
-  surahNameAr: {
+  surahNodeName: {
     fontSize: FONT_SIZES.lg,
     fontWeight: 'bold',
     color: COLORS.text,
   },
-  surahNameEn: {
+  textLocked: {
+    color: COLORS.textSecondary,
+  },
+  surahNodeMeta: {
     fontSize: FONT_SIZES.sm,
     color: COLORS.textSecondary,
   },
-  surahMeta: {
-    fontSize: FONT_SIZES.xs,
-    color: COLORS.textSecondary,
-    marginTop: SPACING.xs,
+  upgradeCard: {
+    backgroundColor: COLORS.accentLight,
+    padding: SPACING.md,
+    borderRadius: BORDER_RADIUS.md,
+    marginTop: SPACING.sm,
   },
-  lockIcon: {
-    padding: SPACING.sm,
-  },
-  lockIconText: {
-    fontSize: FONT_SIZES.lg,
-  },
-  arrow: {
-    fontSize: FONT_SIZES.xl,
-    color: COLORS.textSecondary,
-    padding: SPACING.sm,
+  upgradeText: {
+    color: COLORS.card,
+    fontSize: FONT_SIZES.md,
+    textAlign: 'center',
+    fontWeight: '600',
   },
 });
 

@@ -63,7 +63,20 @@ router.post('/record', authenticateUser, async (req, res) => {
  */
 router.post('/analyze', authenticateUser, async (req, res) => {
     try {
-        const { recording_id, accuracy_score, tajweed_score, pronunciation_score, errors_detected } = req.body;
+        // TODO(security): scores are currently computed on-device and sent by
+        // the client, which is spoofable. When the on-device TFLite model is
+        // integrated, move scoring server-side (or sign the on-device result).
+        const { recording_id, errors_detected } = req.body;
+
+        const clampScore = (value) => {
+            const n = Number(value);
+            if (!Number.isFinite(n)) return 0;
+            return Math.min(100, Math.max(0, n));
+        };
+
+        const accuracy_score = clampScore(req.body.accuracy_score);
+        const tajweed_score = clampScore(req.body.tajweed_score);
+        const pronunciation_score = clampScore(req.body.pronunciation_score);
 
         // Get recording
         const { data: recording } = await supabase
@@ -318,6 +331,17 @@ router.post('/review', authenticateUser, async (req, res) => {
             verse_id
         );
 
+        // Dedicated reviewer badge after 50 reviews
+        const { count: reviewCount } = await supabase
+            .from('points_history')
+            .select('*', { count: 'exact', head: true })
+            .eq('kid_id', kid_id)
+            .eq('activity_type', 'verse_reviewed');
+
+        if (reviewCount >= 50) {
+            await gamificationService.checkAndAwardBadge(kid_id, 'FIFTY_REVIEWS');
+        }
+
         res.json({
             success: true,
             message: 'Review submitted successfully',
@@ -376,6 +400,39 @@ router.get('/stats/:kidId', authenticateUser, verifyKidOwnership, async (req, re
         res.status(500).json({
             success: false,
             message: 'Failed to fetch statistics'
+        });
+    }
+});
+
+/**
+ * @route   GET /api/memorization/progress-map/:kidId
+ * @desc    Memorized-verse counts per surah, for the Quest Map (one call)
+ * @access  Private
+ */
+router.get('/progress-map/:kidId', authenticateUser, verifyKidOwnership, async (req, res) => {
+    try {
+        const { data: rows, error } = await supabase
+            .from('memorized_verses')
+            .select('verse_id, verses!inner(surah_id)')
+            .eq('kid_id', req.params.kidId);
+
+        if (error) throw error;
+
+        const progressBySurah = {};
+        (rows || []).forEach(row => {
+            const surahId = row.verses.surah_id;
+            progressBySurah[surahId] = (progressBySurah[surahId] || 0) + 1;
+        });
+
+        res.json({
+            success: true,
+            progressBySurah
+        });
+    } catch (error) {
+        console.error('Get progress map error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch progress map'
         });
     }
 });

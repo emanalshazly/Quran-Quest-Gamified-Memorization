@@ -135,6 +135,21 @@ router.post('/:battleId/submit', authenticateUser, async (req, res) => {
     try {
         const { kid_id, score, time_seconds } = req.body;
 
+        // Verify the submitting kid belongs to the authenticated user
+        // (prevents submitting scores on behalf of someone else's kid).
+        const { data: submittingKid } = await supabase
+            .from('kids')
+            .select('user_id')
+            .eq('id', kid_id)
+            .single();
+
+        if (!submittingKid || submittingKid.user_id !== req.user.id) {
+            return res.status(403).json({
+                success: false,
+                message: 'Access denied to this kid profile'
+            });
+        }
+
         const { data: battle } = await supabase
             .from('battle_challenges')
             .select('*')
@@ -145,6 +160,13 @@ router.post('/:battleId/submit', authenticateUser, async (req, res) => {
             return res.status(404).json({
                 success: false,
                 message: 'Battle not found'
+            });
+        }
+
+        if (battle.status === 'completed' || battle.status === 'cancelled') {
+            return res.status(400).json({
+                success: false,
+                message: `Battle is already ${battle.status}`
             });
         }
 

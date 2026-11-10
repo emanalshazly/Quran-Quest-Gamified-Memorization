@@ -95,22 +95,11 @@ class GamificationService {
      */
     async awardPoints(kidId, points, activityType, activityDescription, referenceId = null) {
         try {
-            // Add points to kid's total
-            const { data: kid, error: kidError } = await supabase
-                .from('kids')
-                .select('total_points')
-                .eq('id', kidId)
-                .single();
+            // Atomically add points (and recalculate level) via SQL function
+            const { data: newTotal, error: rpcError } = await supabase
+                .rpc('increment_kid_points', { p_kid_id: kidId, p_points: points });
 
-            if (kidError) throw kidError;
-
-            const newTotal = kid.total_points + points;
-
-            // Update kid's total points
-            await supabase
-                .from('kids')
-                .update({ total_points: newTotal })
-                .eq('id', kidId);
+            if (rpcError) throw rpcError;
 
             // Record in points history
             await supabase
@@ -120,7 +109,7 @@ class GamificationService {
                     points_earned: points,
                     activity_type: activityType,
                     activity_description: activityDescription,
-                    reference_id: referenceId
+                    reference_id: referenceId != null ? String(referenceId) : null
                 });
 
             return { success: true, totalPoints: newTotal, pointsEarned: points };
